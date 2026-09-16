@@ -1,4 +1,4 @@
-# planirovanie-menu-na-nedelu
+А# planirovanie-menu-na-nedelu
 # ИС планирования меню на неделю
 
 Проект команды 3 курса «Прикладная информатика» по дисциплине
