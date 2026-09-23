@@ -39,7 +39,7 @@
 
 - [WBS (xlsx)](docs/plan/WBS.xlsx)
 - [Диаграмма Ганта](docs/plan/gantt.md)
-- [Реестр рисков](docs/plan/risks.md)
+- [Реестр рисков](docs/plan/risk.md)
 
 **Текущая веха:** Демонстрация прототипа — 23.10.2026
 
