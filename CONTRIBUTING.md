@@ -60,5 +60,5 @@
 - Планёрка — раз в неделю, 15 минут, вторник 18:10.
 - Протокол встречи — в `docs/protocols/` по шаблону
   `docs/templates/meeting-template.md`.
-- Задачи — в трекере YouTrack, а не в чате.
+- Задачи — в GitHub Projects.
 
