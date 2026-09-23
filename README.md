@@ -38,7 +38,7 @@
 ## План проекта
 
 - [WBS (xlsx)](docs/plan/WBS.xlsx)
-- [Диаграмма Ганта](docs/plan/gantt.md)
+- [Диаграмма Ганта](docs/plan/gantt.png)
 - [Реестр рисков](docs/plan/risk.md)
 
 **Текущая веха:** Демонстрация прототипа — 23.10.2026
