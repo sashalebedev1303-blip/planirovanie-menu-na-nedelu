@@ -35,7 +35,7 @@
 - шаблоны: docs/templates/;
 - план проекта: docs/plan/ (появится на ЛР-3).
 
-  ## План проекта
+## План проекта
 
 - [WBS (xlsx)](docs/plan/WBS.xlsx)
 - [Диаграмма Ганта](docs/plan/gantt.md)
