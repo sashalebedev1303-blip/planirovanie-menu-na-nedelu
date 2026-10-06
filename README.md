@@ -51,6 +51,4 @@
 
 Все задачи плана ведутся в [GitHub Issues](https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/issues?q=label%3AWBS) и на [доске проекта](https://github.com/users/sashalebedev1303-blip/projects/1).
 
-**Плановая трудоёмкость:** 68 ч  
-**Буфер (20 %):** ~14 ч  
-**Резерв в графике:** 11.11–04.12.2026
+
