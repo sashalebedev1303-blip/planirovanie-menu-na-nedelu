@@ -40,6 +40,12 @@
 - [WBS (xlsx)](docs/plan/WBS.xlsx)
 - [Диаграмма Ганта](docs/plan/Ганта_по_неделям.png)
 - [Реестр рисков](docs/plan/risk.md)
+- [Каталог требований](docs/plan/requirements.md)
+- [ИСР (WBS)](docs/plan/wbs.md)
+- [Словарь ИСР](docs/plan/wbs-dictionary.md)
+- [Базовый план по содержанию](docs/plan/scope-baseline.md)
+- [Процедура контроля изменений](docs/plan/change-control.md)
+- [Протокол перекрёстного аудита](docs/plan/audit-protocol.md)
 
 **Текущая веха:** Демонстрация прототипа — 23.10.2026
 
