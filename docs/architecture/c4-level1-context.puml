@@ -1,0 +1,10 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title Системный контекст (C4 Level 1) - ИС Планирования меню
+
+Person(user, "Сотрудник столовой", "Планирует меню и закупает продукты")
+System(menu_app, "ИС Планирования меню", "Позволяет вести справочники, составлять меню и генерировать список покупок")
+
+Rel(user, menu_app, "Составляет меню, запрашивает список покупок")
+@enduml
