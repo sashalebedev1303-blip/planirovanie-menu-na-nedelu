@@ -1,0 +1,17 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Диаграмма контейнеров (C4 Level 2) - ИС Планирования меню
+
+Person(user, "Сотрудник столовой", "Пользователь системы")
+
+System_Boundary(c1, "ИС Планирования меню") {
+    Container(web, "Веб-интерфейс", "HTML, CSS, JS", "Отображение меню в виде таблицы, справочников, списка покупок")
+    Container(api, "API Сервер", "Python, FastAPI", "Бизнес-логика: генерация меню, суммирование ингредиентов")
+    ContainerDb(db, "База данных", "SQLite", "Хранение блюд, ингредиентов, меню и списков")
+}
+
+Rel(user, web, "Использует", "HTTPS/HTTP")
+Rel(web, api, "Отправляет запросы", "JSON/HTTP")
+Rel(api, db, "Читает/пишет данные", "SQLAlchemy")
+@enduml
