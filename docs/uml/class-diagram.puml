@@ -1,0 +1,29 @@
+@startuml
+class Dish {
+  +id: int
+  +name: string
+  +category: string
+}
+class Ingredient {
+  +id: int
+  +dish_id: int
+  +name: string
+  +quantity: string
+  +unit: string
+}
+class Menu {
+  +id: int
+  +date: string
+  +meal_type: string
+  +servings: int
+}
+class Shopping {
+  +id: int
+  +name: string
+  +quantity: string
+  +bought: int
+}
+Dish "1" *-- "many" Ingredient
+Menu "1" o-- "many" Dish
+Shopping ..> Ingredient : generated from
+@enduml
