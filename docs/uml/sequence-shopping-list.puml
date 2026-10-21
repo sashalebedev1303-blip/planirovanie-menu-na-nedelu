@@ -1,0 +1,44 @@
+@startuml
+skinparam style strictuml
+actor "Сотрудник столовой" as User
+participant "Frontend (Web UI)" as UI
+participant "Backend API (FastAPI)" as API
+database "База данных (SQLite)" as DB
+
+title Последовательность: Генерация списка покупок (Блок IDEF0 A3)
+
+User -> UI: Нажимает "Сформировать список покупок"
+activate UI
+
+UI -> API: POST /api/shopping/generate
+activate API
+
+API -> DB: Запрос меню на текущую неделю (SELECT)
+activate DB
+DB --> API: Список блюд (Dish) с порциями (servings)
+deactivate DB
+
+note right of API: Блок A3.1: Сбор ингредиентов
+loop Для каждого блюда в меню
+    API -> DB: Запрос ингредиентов блюда (SELECT)
+    activate DB
+    DB --> API: Список ингредиентов (name, quantity, unit)
+    deactivate DB
+end
+
+note right of API: Блок A3.2: Суммирование
+API -> API: Приведение единиц измерения (A3.2.1)
+API -> API: Суммирование количеств с учетом порций (A3.2.2)
+
+API -> DB: Сохранение сформированного списка (INSERT/UPDATE в Shopping) (A3.2.3)
+activate DB
+DB --> API: Успешно сохранено
+deactivate DB
+
+API --> UI: JSON с готовым списком покупок
+deactivate API
+
+UI -> UI: Отрисовка таблицы продуктов
+UI --> User: Отображает список на экране
+deactivate UI
+@enduml
