@@ -1,6 +1,7 @@
 import csv
 import json
 import random
+import io
 from datetime import date as date_cls, timedelta, datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -2504,8 +2505,6 @@ async def clear_all():
 
 # ==================== ПАТТЕРН СТРАТЕГИЯ (SOLID / OCP) ====================
 from abc import ABC, abstractmethod
-import csv
-import io
 
 class ExportStrategy(ABC):
     @abstractmethod
