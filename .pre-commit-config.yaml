@@ -1,0 +1,12 @@
+# Pre-commit хук (ЛР-6): перед каждым коммитом запускается линтер ruff.
+# Установка (один раз):
+#   pip install -r requirements-dev.txt
+#   pre-commit install
+# Ручной запуск по всем файлам:
+#   pre-commit run --all-files
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.3
+    hooks:
+      - id: ruff
+        args: [--fix]
