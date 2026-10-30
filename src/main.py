@@ -1,82 +1,19 @@
-import os
 import csv
 import json
 import random
 from datetime import date as date_cls, timedelta, datetime
-from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
+from sqlalchemy import text
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
 
-BASE_DIR = Path(__file__).parent
-DATABASE_URL = f"sqlite:///{BASE_DIR}/dacha.db"
-
-engine = create_engine(DATABASE_URL, echo=False)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-
-# ==================== МОДЕЛИ ====================
-
-class Menu(Base):
-    __tablename__ = "menu"
-    id = Column(Integer, primary_key=True, index=True)
-    date = Column(String, index=True)
-    meal_type = Column(String, index=True)
-    text = Column(String)
-    dish_id = Column(Integer, nullable=True)
-    # НОВОЕ ПОЛЕ: Количество порций
-    servings = Column(Integer, default=1)
-
-
-class Shopping(Base):
-    """Список покупок (функции 5 и 6)."""
-    __tablename__ = "shopping"
-    id = Column(Integer, primary_key=True, index=True)
-    item_text = Column(String)            # legacy
-    name = Column(String, index=True)     # название
-    quantity = Column(String)             # количество (строка)
-    unit = Column(String)                 # единица измерения
-    bought = Column(Integer, default=0)   # 0/1
-    category = Column(String, default="") # категория
-
-
-class Dish(Base):
-    __tablename__ = "dishes"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False, index=True)
-    category = Column(String, index=True)
-
-
-class Ingredient(Base):
-    __tablename__ = "ingredients"
-    id = Column(Integer, primary_key=True, index=True)
-    dish_id = Column(Integer, index=True)
-    name = Column(String, nullable=False)
-    quantity = Column(String)
-    unit = Column(String)
-
-
-class Product(Base):
-    __tablename__ = "products"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False, index=True)
-    unit = Column(String)
-    category = Column(String, index=True)
-
-
-class Favorite(Base):
-    __tablename__ = "favorites"
-    id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, nullable=False)
-    from_date = Column(String)
-    to_date = Column(String)
-    created_at = Column(String)
-    data = Column(String)
-
+from database import BASE_DIR, Base, SessionLocal, engine
+from models import Menu, Shopping, Dish, Ingredient, Product, Favorite
+from schemas import (
+    MenuItemCreate, ShoppingItemCreate, ShoppingItemUpdate, DishIngredient,
+    DishCreate, ProductCreate, RandomMenuRequest, DuplicateMenuRequest,
+    SaveFavoriteRequest, ApplyFavoriteRequest
+)
 
 # ==================== ИНИЦИАЛИЗАЦИЯ БД ====================
 
@@ -203,70 +140,7 @@ init_db()
 app = FastAPI(title="Помощник для планирования меню на неделю")
 
 
-# ==================== PYDANTIC-МОДЕЛИ ====================
 
-class MenuItemCreate(BaseModel):
-    date: str
-    meal_type: str
-    text: str = ""
-    dish_id: int | None = None
-    servings: int = 1 # НОВОЕ ПОЛЕ
-
-
-class ShoppingItemCreate(BaseModel):
-    name: str
-    quantity: str = ""
-    unit: str = ""
-    category: str = ""
-
-
-class ShoppingItemUpdate(BaseModel):
-    name: str | None = None
-    quantity: str | None = None
-    unit: str | None = None
-    category: str | None = None
-    bought: int | None = None
-
-
-class DishIngredient(BaseModel):
-    name: str
-    quantity: str = ""
-    unit: str = ""
-
-
-class DishCreate(BaseModel):
-    name: str
-    category: str = ""
-    ingredients: list[DishIngredient] = []
-
-
-class ProductCreate(BaseModel):
-    name: str
-    unit: str = ""
-    category: str = ""
-
-
-class RandomMenuRequest(BaseModel):
-    start_date: str
-    days: int = 7
-
-
-class DuplicateMenuRequest(BaseModel):
-    from_date: str
-    to_date: str
-    overwrite: bool = False
-
-
-class SaveFavoriteRequest(BaseModel):
-    title: str
-    from_date: str
-    to_date: str
-
-
-class ApplyFavoriteRequest(BaseModel):
-    favorite_id: int
-    to_date: str
-    overwrite: bool = False
 
 
 # ==================== ГЛАВНАЯ HTML-СТРАНИЦА ====================
