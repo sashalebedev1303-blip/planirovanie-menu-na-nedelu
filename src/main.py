@@ -2502,6 +2502,48 @@ async def clear_all():
     finally:
         db.close()
 
+# ==================== ПАТТЕРН СТРАТЕГИЯ (SOLID / OCP) ====================
+from abc import ABC, abstractmethod
+import csv
+import io
+
+class ExportStrategy(ABC):
+    @abstractmethod
+    def export(self, items: list) -> str:
+        pass
+
+class TxtExportStrategy(ExportStrategy):
+    def export(self, items: list) -> str:
+        result = "СПИСОК ПОКУПОК\n" + "="*30 + "\n"
+        for i, item in enumerate(items, 1):
+            result += f"{i}. {item['name']} — {item['quantity']} {item['unit']}\n"
+        return result
+
+class CsvExportStrategy(ExportStrategy):
+    def export(self, items: list) -> str:
+        output = io.StringIO()
+        writer = csv.writer(output, delimiter=';')
+        writer.writerow(["Наименование", "Количество", "Ед.изм"])
+        for item in items:
+            writer.writerow([item['name'], item['quantity'], item['unit']])
+        return output.getvalue()
+
+@app.get("/api/shopping/export/strategy")
+async def export_shopping_strategy(format: str = "txt"):
+    db = SessionLocal()
+    try:
+        items = db.query(Shopping).filter(Shopping.bought == 0).all()
+        data = [{"name": i.name, "quantity": i.quantity, "unit": i.unit} for i in items]
+        
+        # Выбор стратегии
+        if format == "csv":
+            strategy = CsvExportStrategy()
+        else:
+            strategy = TxtExportStrategy()
+            
+        return {"data": strategy.export(data)}
+    finally:
+        db.close()
 
 import uvicorn
 import logging
