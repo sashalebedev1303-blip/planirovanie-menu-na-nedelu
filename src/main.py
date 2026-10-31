@@ -1,7 +1,6 @@
 import csv
 import json
 import random
-import io
 from datetime import date as date_cls, timedelta, datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -9,7 +8,9 @@ from sqlalchemy import text
 from pydantic import BaseModel
 
 from database import BASE_DIR, Base, SessionLocal, engine
+from export_strategies import get_strategy
 from models import Menu, Shopping, Dish, Ingredient, Product, Favorite
+from quantity import parse_quantity
 from schemas import (
     MenuItemCreate, ShoppingItemCreate, ShoppingItemUpdate, DishIngredient,
     DishCreate, ProductCreate, RandomMenuRequest, DuplicateMenuRequest,
@@ -2229,20 +2230,6 @@ async def delete_product(product_id: int):
 
 # ==================== API: СПИСОК ПОКУПОК ====================
 
-def _parse_qty(value):
-    """Пытается преобразовать строку в число. Возвращает (number_or_None, original_str)."""
-    if value is None:
-        return None, ""
-    s = str(value).strip()
-    if not s:
-        return None, ""
-    s2 = s.replace(",", ".")
-    try:
-        return float(s2), s
-    except ValueError:
-        return None, s
-
-
 @app.post("/api/shopping/generate")
 async def generate_shopping_from_menu():
     """
@@ -2274,7 +2261,7 @@ async def generate_shopping_from_menu():
             total_servings = dish_servings.get(ing.dish_id, 1)
             
             key = (name.lower(), unit.lower())
-            qty_num, qty_text = _parse_qty(ing.quantity)
+            qty_num, qty_text = parse_quantity(ing.quantity)
             
             if key not in aggregated:
                 aggregated[key] = {
@@ -2503,44 +2490,15 @@ async def clear_all():
     finally:
         db.close()
 
-# ==================== ПАТТЕРН СТРАТЕГИЯ (SOLID / OCP) ====================
-from abc import ABC, abstractmethod
-
-class ExportStrategy(ABC):
-    @abstractmethod
-    def export(self, items: list) -> str:
-        pass
-
-class TxtExportStrategy(ExportStrategy):
-    def export(self, items: list) -> str:
-        result = "СПИСОК ПОКУПОК\n" + "="*30 + "\n"
-        for i, item in enumerate(items, 1):
-            result += f"{i}. {item['name']} — {item['quantity']} {item['unit']}\n"
-        return result
-
-class CsvExportStrategy(ExportStrategy):
-    def export(self, items: list) -> str:
-        output = io.StringIO()
-        writer = csv.writer(output, delimiter=';')
-        writer.writerow(["Наименование", "Количество", "Ед.изм"])
-        for item in items:
-            writer.writerow([item['name'], item['quantity'], item['unit']])
-        return output.getvalue()
-
 @app.get("/api/shopping/export/strategy")
 async def export_shopping_strategy(format: str = "txt"):
     db = SessionLocal()
     try:
         items = db.query(Shopping).filter(Shopping.bought == 0).all()
         data = [{"name": i.name, "quantity": i.quantity, "unit": i.unit} for i in items]
-        
-        # Выбор стратегии
-        if format == "csv":
-            strategy = CsvExportStrategy()
-        else:
-            strategy = TxtExportStrategy()
-            
-        return {"data": strategy.export(data)}
+
+        # Выбор стратегии из реестра (паттерн «Стратегия», OCP)
+        return {"data": get_strategy(format).export(data)}
     finally:
         db.close()
 
