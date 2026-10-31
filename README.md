@@ -81,7 +81,7 @@
 - [Реестр рисков](docs/plan/risk.md)
 - [Каталог требований](docs/plan/requirements.md)
 
-**Текущая веха:** Демонстрация прототипа — 23.10.2026
+**Текущая веха:** ЛР-6 «Реализация и Git-workflow» — 31.10.2026
 
 Все задачи плана ведутся в [GitHub Issues](https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/issues?q=label%3AWBS) и на [доске проекта](https://github.com/users/sashalebedev1303-blip/projects/1).
 
