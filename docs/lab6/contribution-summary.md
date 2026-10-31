@@ -22,6 +22,10 @@
 | #100 | `create-build.app` | Лебедев | скрипт сборки `src/build_app.py` |
 | #101 | `new_dishes` | Лебедев | расширение справочника блюд (`src/dishes.csv` до 2373 строк) |
 | #102 | `feature/solid-refactoring_original` | Лебедев | SOLID-рефакторинг (слои), паттерн «Стратегия», `docs/refactoring.md` |
+| #103 | `feature/lab6-git-flow` | Лебедев | дополнение CONTRIBUTING.md |
+| #104 | `feature/insights` | Лебедев | `docs/team-contributions.md` + скриншот Insights contributors |
+| PR ветки `menu10-export-file` | `feature/menu10-export-file` | Игорь (MENU-10) | README: раздел экспорта списка покупок, веха ЛР-6 |
+| PR ветки `menu8-testing` | `feature/menu8-testing` | Лебедев (MENU-8) | README: раздел «Как проверять», веха; **моделирование и разрешение конфликта** (`docs/lab6/conflict-modeling.md`) |
 | PR ветки `feature/lab6-git-workflow` | `feature/lab6-git-workflow` | оба (4 коммита Игорь, 3 коммита Лебедев) | pre-commit, тесты, демо bisect/reflog, версии/теги, сводка вклада |
 
 Локальная проверка:
