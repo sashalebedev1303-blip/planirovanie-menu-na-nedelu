@@ -54,3 +54,5 @@
 12. Скриншоты шагов 7 (маркеры конфликта), 8–9 (разрешение) приложить к
     [conflict-resolution.md](conflict-resolution.md) разделом «Дубль на двоих» —
     тогда шаг 7 методички закрыт с участием обоих участников.
+    Готовые скриншоты: `docs/conflict-drill-pr-conflict.png`,
+    `docs/conflict-drill-resolve-markers.png`, `docs/conflict-drill-resolve-done.png`.
