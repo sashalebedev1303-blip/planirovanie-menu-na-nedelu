@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from database import BASE_DIR, Base, SessionLocal, engine
 from export_strategies import get_strategy
 from models import Menu, Shopping, Dish, Ingredient, Product, Favorite
+from quantity import parse_quantity
 from schemas import (
     MenuItemCreate, ShoppingItemCreate, ShoppingItemUpdate, DishIngredient,
     DishCreate, ProductCreate, RandomMenuRequest, DuplicateMenuRequest,
@@ -2230,20 +2231,6 @@ async def delete_product(product_id: int):
 
 # ==================== API: СПИСОК ПОКУПОК ====================
 
-def _parse_qty(value):
-    """Пытается преобразовать строку в число. Возвращает (number_or_None, original_str)."""
-    if value is None:
-        return None, ""
-    s = str(value).strip()
-    if not s:
-        return None, ""
-    s2 = s.replace(",", ".")
-    try:
-        return float(s2), s
-    except ValueError:
-        return None, s
-
-
 @app.post("/api/shopping/generate")
 async def generate_shopping_from_menu():
     """
@@ -2275,7 +2262,7 @@ async def generate_shopping_from_menu():
             total_servings = dish_servings.get(ing.dish_id, 1)
             
             key = (name.lower(), unit.lower())
-            qty_num, qty_text = _parse_qty(ing.quantity)
+            qty_num, qty_text = parse_quantity(ing.quantity)
             
             if key not in aggregated:
                 aggregated[key] = {
