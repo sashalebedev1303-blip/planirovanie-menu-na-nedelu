@@ -81,8 +81,8 @@ git push origin v0.1.0
 ```
 
 Состав версии публикуется в разделе **Releases** GitHub
-(тег + заметки о составе версии, шаблон —
-`docs/lab6/release-notes-v010.md`).
+(тег + заметки о составе версии; актуальный пример —
+[Release v0.1.0](https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/releases/tag/v0.1.0)).
 
 ## Автоматическая проверка перед коммитом (ЛР-6)
 
@@ -103,7 +103,5 @@ pre-commit run --all-files  # проверка всех файлов вручн�
 Конфигурация хука — `.pre-commit-config.yaml`: перед коммитом запускается
 ruff, наличие замечаний блокирует коммит до исправления.
 
-Тесты нового кода — `pytest` (каталог `tests/`); они же служат
-критерием «хорошо/плохо» в `git bisect` (см.
-`docs/lab6/bisect-reflog-demo.md`).
+Тесты нового кода — `pytest` (каталог `tests/`).
 
