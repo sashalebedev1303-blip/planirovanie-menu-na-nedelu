@@ -12,6 +12,7 @@ from database import BASE_DIR, Base, SessionLocal, engine
 from export_strategies import get_strategy
 from models import Menu, Shopping, Dish, Ingredient, Product, Favorite
 from quantity import parse_quantity
+from shopping_calc import aggregate_ingredients, collect_servings
 from schemas import (
     MenuItemCreate, ShoppingItemCreate, ShoppingItemUpdate, DishIngredient,
     DishCreate, ProductCreate, RandomMenuRequest, DuplicateMenuRequest,
@@ -2239,11 +2240,8 @@ async def generate_shopping_from_menu():
     db = SessionLocal()
     try:
         menu_items = db.query(Menu).all()
-        # Создаем словарь: {dish_id: общее_количество_порций_в_меню}
-        dish_servings = {}
-        for m in menu_items:
-            if m.dish_id:
-                dish_servings[m.dish_id] = dish_servings.get(m.dish_id, 0) + (m.servings or 1)
+        # Словарь {dish_id: общее_количество_порций} считает shopping_calc (ЛР-7)
+        dish_servings = collect_servings(menu_items)
 
         if not dish_servings:
             raise HTTPException(400, "В меню нет блюд — нечего собирать.")
@@ -2251,53 +2249,16 @@ async def generate_shopping_from_menu():
         # Получаем все ингредиенты для этих блюд
         ingredients = db.query(Ingredient).filter(Ingredient.dish_id.in_(dish_servings.keys())).all()
 
-        aggregated = {}
-        for ing in ingredients:
-            name = (ing.name or "").strip()
-            unit = (ing.unit or "").strip()
-            if not name:
-                continue
-
-            # Умножаем количество ингредиента на общее количество порций этого блюда
-            total_servings = dish_servings.get(ing.dish_id, 1)
-            
-            key = (name.lower(), unit.lower())
-            qty_num, qty_text = parse_quantity(ing.quantity)
-            
-            if key not in aggregated:
-                aggregated[key] = {
-                    "name": name,
-                    "unit": unit,
-                    "qty": 0.0,
-                    "has_numeric": False,
-                    "text_qty": []
-                }
-            
-            if qty_num is not None:
-                # Умножаем!
-                aggregated[key]["qty"] += qty_num * total_servings
-                aggregated[key]["has_numeric"] = True
-            elif qty_text:
-                # Если количество текстовое (например "по вкусу"), просто добавляем текст
-                # (умножать текст не имеет смысла)
-                aggregated[key]["text_qty"].append(f"{qty_text} (x{total_servings})")
+        rows = aggregate_ingredients(dish_servings, ingredients)
 
         db.query(Shopping).delete()
 
-        for key, data in aggregated.items():
-            if data["has_numeric"]:
-                q = data["qty"]
-                qty_str = str(int(q)) if q == int(q) else f"{q:g}"
-                if data["text_qty"]:
-                    qty_str += " (+ " + ", ".join(data["text_qty"]) + ")"
-            else:
-                qty_str = ", ".join(data["text_qty"]) if data["text_qty"] else ""
-
+        for row in rows:
             db.add(Shopping(
-                item_text=f"{data['name']} — {qty_str} {data['unit']}".strip(),
-                name=data["name"],
-                quantity=qty_str,
-                unit=data["unit"],
+                item_text=f"{row['name']} — {row['quantity']} {row['unit']}".strip(),
+                name=row["name"],
+                quantity=row["quantity"],
+                unit=row["unit"],
                 bought=0,
                 category=""
             ))
@@ -2462,10 +2423,10 @@ async def get_report():
         for m in menu_items:
             for ing in ingredients_by_dish.get(m.dish_id, []):
                 key = (ing["name"], ing["unit"] or "")
-                try:
-                    qty = float(ing["quantity"]) if ing["quantity"] else 0
-                except ValueError:
-                    qty = 0
+                # Количество может быть с запятой («50,5») — разбираем так же,
+                # как и список покупок (исправление баг-репорта ЛР-7 № 2)
+                qty_num, _ = parse_quantity(ing["quantity"])
+                qty = qty_num or 0
                 # Умножаем на порции в отчете
                 aggregated[key] = aggregated.get(key, 0) + (qty * (m.servings or 1))
         summary = [{"name": k[0], "unit": k[1], "quantity": v} for k, v in aggregated.items()]
