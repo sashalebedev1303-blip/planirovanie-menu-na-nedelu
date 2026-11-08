@@ -159,6 +159,15 @@ def test_aggregate_skips_ingredients_not_on_menu():
     assert [r["name"] for r in rows] == ["Молоко"]
 
 
+def test_aggregate_skips_blank_names():
+    # Ингредиент без названия не создаёт пустую позицию в списке
+    rows = aggregate_ingredients(
+        {1: 1},
+        [IngredientRow(dish_id=1, name="   ", quantity="10", unit="г")],
+    )
+    assert rows == []
+
+
 # ============ параметризированный тест: граничные значения количества ============
 
 
