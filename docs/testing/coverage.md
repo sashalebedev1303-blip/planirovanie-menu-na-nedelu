@@ -12,12 +12,12 @@
 
 ```
 --------------- tests coverage -----------------------------------------------
-______________ coverage: platform win32, python 3.10.11-final-0 _______________
+______________ coverage: platform linux, python 3.14.2-final-0 _______________
 
 Name                   Stmts   Miss  Cover   Missing
 ----------------------------------------------------
-src\quantity.py           11      0   100%
-src\shopping_calc.py      38      0   100%
+src/quantity.py           11      0   100%
+src/shopping_calc.py      38      0   100%
 ----------------------------------------------------
 TOTAL                     49      0   100%
 Required test coverage of 60% reached. Total coverage: 100.00%
