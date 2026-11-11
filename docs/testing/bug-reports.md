@@ -28,7 +28,7 @@
 
 ## № 2. Отчёт: количество с запятой («50,5») считается как 0
 
-- Issue: (https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/issues/121) ; статус: закрыт (fix: b43e6f3)
+- **Issue:** [https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/issues/121] ; **статус:** закрыт (fix: b43e6f3)
 - **Приоритет:** высокий; **версия:** v0.1.0
 
 **Шаги воспроизведения:**
@@ -49,7 +49,7 @@
 
 ## № 3. День меню: meal_type не валидируется
 
-- Issue: (https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/issues/122) ; статус: закрыт (fix: b43e6f3)
+- **Issue:** [https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/issues/122] ; **статус:** закрыт (fix: b43e6f3)
 - **Приоритет:** средний; **версия:** v0.1.0
 
 **Шаги воспроизведения:**
