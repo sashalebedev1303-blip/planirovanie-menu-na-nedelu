@@ -8,7 +8,7 @@
 
 ## № 1. Список покупок: дробное количество выводится с точкой
 
-- Issue: #120 (https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/issues/120) ; статус: закрыт (fix: a615cda)
+- Issue:(https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/issues/120) ; статус: закрыт (fix: a615cda)
 - **Приоритет:** низкий; **версия:** v0.1.0
 
 **Шаги воспроизведения:**
@@ -28,7 +28,7 @@
 
 ## № 2. Отчёт: количество с запятой («50,5») считается как 0
 
-- Issue: #121 ; статус: закрыт (fix: b43e6f3)
+- Issue: (https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/issues/121) ; статус: закрыт (fix: b43e6f3)
 - **Приоритет:** высокий; **версия:** v0.1.0
 
 **Шаги воспроизведения:**
@@ -49,7 +49,7 @@
 
 ## № 3. День меню: meal_type не валидируется
 
-- Issue: #122 ; статус: закрыт (fix: b43e6f3)
+- Issue: (https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/issues/122) ; статус: закрыт (fix: b43e6f3)
 - **Приоритет:** средний; **версия:** v0.1.0
 
 **Шаги воспроизведения:**
