@@ -1,8 +1,15 @@
+from typing import Literal
+
 from pydantic import BaseModel
+
+# Форма «День меню» поддерживает ровно четыре приёма пищи (используются
+# интерфейсом, фильтром и случайным меню). Другие значения — ошибка валидации
+# (исправление баг-репорта ЛР-7 № 3: раньше сохранялось всё подряд).
+MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"]
 
 class MenuItemCreate(BaseModel):
     date: str
-    meal_type: str
+    meal_type: Literal["breakfast", "lunch", "dinner", "snack"]
     text: str = ""
     dish_id: int | None = None
     servings: int = 1
