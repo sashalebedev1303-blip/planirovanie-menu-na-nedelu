@@ -1,6 +1,7 @@
-import PyInstaller.__main__
 import os
 import shutil
+
+import PyInstaller.__main__
 
 # Имя вашего главного файла
 MAIN_SCRIPT = 'main.py'
@@ -18,9 +19,9 @@ print("Начинаю сборку...")
 PyInstaller.__main__.run([
     MAIN_SCRIPT,
     '--name=%s' % APP_NAME,
-    '--onedir',              
-    '--noconsole',           
-    '--add-data=dacha.db;.',    
+    '--onedir',
+    '--noconsole',
+    '--add-data=dacha.db;.',
     '--add-data=dishes.csv;.',
     '--hidden-import=uvicorn.logging',
     '--hidden-import=uvicorn.loops',
