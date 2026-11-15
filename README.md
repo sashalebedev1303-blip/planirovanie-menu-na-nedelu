@@ -67,6 +67,31 @@ python -m pytest --cov-report=term-missing -v
 
 Установка зависимостей для тестирования: `python -m pip install -r requirements-dev.txt -r src/requirements.txt`.
 
+## Метрики качества и технический долг (ЛР-8)
+
+Статический анализ и метрики выполняются локально (раздел 4.3 методички):
+
+```
+python -m ruff check src                        # CI-профиль (зелёная сборка)
+python -m ruff check src --config ruff-strict.toml   # строгий профиль
+python scripts/code_metrics.py src              # сложность, дубли, LOC
+```
+
+Артефакты ЛР-8 в `docs/lab8/`:
+
+- [Профиль качества «до»](docs/lab8/quality-profile.md) и замеры
+  `metrics-before.json` / `metrics-after.json`;
+- [Классификация 10 замечаний по ISO/IEC 25010](docs/lab8/iso25010-classification.md);
+- [Реестр технического долга (топ-5)](docs/lab8/tech-debt-registry.md) —
+  погашено 4 позиции (Д-1…Д-4);
+- [Сравнение метрик «до — после»](docs/lab8/before-after.md);
+- [Что осознанно оставляем и почему](docs/lab8/accepted-debt.md).
+
+> Для подключения SonarCloud: войти на sonarcloud.io через GitHub-аккаунт
+> владельца репозитория, импортировать репозиторий, добавить бейдж в
+> README. Для Python-проектов настройка автоматическая; при необходимости
+> сгенерировать `sonar-project.properties` (путь источников — `src`).
+
 ## Архитектура и модели 
 
 Зафиксирована архитектура решения и построены ключевые диаграммы. Исходники (`.puml`) и экспортированные изображения находятся в директориях `docs/uml/` и `docs/architecture/`.
