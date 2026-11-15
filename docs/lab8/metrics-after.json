@@ -1,0 +1,163 @@
+{
+  "files": {
+    "build_app.py": {
+      "loc": 32,
+      "functions": 0,
+      "routes": 0,
+      "max_cc": 0
+    },
+    "database.py": {
+      "loc": 9,
+      "functions": 0,
+      "routes": 0,
+      "max_cc": 0
+    },
+    "export_strategies.py": {
+      "loc": 38,
+      "functions": 4,
+      "routes": 0,
+      "max_cc": 2
+    },
+    "main.py": {
+      "loc": 2175,
+      "functions": 40,
+      "routes": 30,
+      "max_cc": 12
+    },
+    "models.py": {
+      "loc": 45,
+      "functions": 0,
+      "routes": 0,
+      "max_cc": 0
+    },
+    "quantity.py": {
+      "loc": 20,
+      "functions": 1,
+      "routes": 0,
+      "max_cc": 4
+    },
+    "schemas.py": {
+      "loc": 50,
+      "functions": 0,
+      "routes": 0,
+      "max_cc": 0
+    },
+    "shopping_calc.py": {
+      "loc": 74,
+      "functions": 3,
+      "routes": 0,
+      "max_cc": 11
+    }
+  },
+  "functions": [
+    [
+      "main.py:73",
+      "_seed_dishes_from_csv",
+      12
+    ],
+    [
+      "main.py:1871",
+      "generate_random_menu",
+      8
+    ],
+    [
+      "main.py:1914",
+      "duplicate_menu",
+      9
+    ],
+    [
+      "main.py:2028",
+      "apply_favorite",
+      11
+    ],
+    [
+      "main.py:2297",
+      "update_shopping_item",
+      8
+    ],
+    [
+      "main.py:2362",
+      "get_report",
+      11
+    ],
+    [
+      "shopping_calc.py:37",
+      "aggregate_ingredients",
+      11
+    ]
+  ],
+  "duplicates": [
+    {
+      "file": "main.py",
+      "line": 763,
+      "copies": 2,
+      "window": 8
+    },
+    {
+      "file": "main.py",
+      "line": 764,
+      "copies": 2,
+      "window": 8
+    },
+    {
+      "file": "main.py",
+      "line": 1308,
+      "copies": 2,
+      "window": 8
+    },
+    {
+      "file": "main.py",
+      "line": 1309,
+      "copies": 2,
+      "window": 8
+    },
+    {
+      "file": "main.py",
+      "line": 1319,
+      "copies": 2,
+      "window": 8
+    },
+    {
+      "file": "main.py",
+      "line": 1320,
+      "copies": 2,
+      "window": 8
+    },
+    {
+      "file": "main.py",
+      "line": 1416,
+      "copies": 2,
+      "window": 8
+    },
+    {
+      "file": "main.py",
+      "line": 1417,
+      "copies": 2,
+      "window": 8
+    },
+    {
+      "file": "main.py",
+      "line": 1418,
+      "copies": 2,
+      "window": 8
+    },
+    {
+      "file": "main.py",
+      "line": 1419,
+      "copies": 2,
+      "window": 8
+    },
+    {
+      "file": "main.py",
+      "line": 1420,
+      "copies": 2,
+      "window": 8
+    }
+  ],
+  "totals": {
+    "loc": 2443,
+    "duplicate_lines": 88,
+    "duplicate_ratio_pct": 3.6,
+    "functions_cc_ge_8": 7
+  }
+}

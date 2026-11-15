@@ -1,140 +1,186 @@
 import csv
 import json
 import random
-import io
-from datetime import date as date_cls, timedelta, datetime
-from fastapi import FastAPI, HTTPException
+from datetime import date as date_cls
+from datetime import datetime, timedelta
+
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text
-from pydantic import BaseModel
 
 from database import BASE_DIR, Base, SessionLocal, engine
 from export_strategies import get_strategy
-from models import Menu, Shopping, Dish, Ingredient, Product, Favorite
+from models import Dish, Favorite, Ingredient, Menu, Product, Shopping
 from quantity import parse_quantity
-from shopping_calc import aggregate_ingredients, collect_servings
 from schemas import (
-    MenuItemCreate, ShoppingItemCreate, ShoppingItemUpdate, DishIngredient,
-    DishCreate, ProductCreate, RandomMenuRequest, DuplicateMenuRequest,
-    SaveFavoriteRequest, ApplyFavoriteRequest
+    ApplyFavoriteRequest,
+    DishCreate,
+    DuplicateMenuRequest,
+    MenuItemCreate,
+    ProductCreate,
+    RandomMenuRequest,
+    SaveFavoriteRequest,
+    ShoppingItemCreate,
+    ShoppingItemUpdate,
 )
+from shopping_calc import aggregate_ingredients, collect_servings
+
+
+def get_db():
+    """Выдаёт сессию БД и гарантированно закрывает её (ЛР-8, Д-1).
+
+    Dependency FastAPI: маршруты принимают сессию через
+    ``db=Depends(get_db)`` вместо копипасты
+    ``db = SessionLocal() / try / finally: db.close()``.
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 
 # ==================== ИНИЦИАЛИЗАЦИЯ БД ====================
+def _ensure_servings_column(db):
+    """Миграция для старых БД: добавляет колонку servings, если её нет."""
+    try:
+        db.execute(text("SELECT servings FROM menu LIMIT 1"))
+    except Exception:
+        print("[init_db] Добавление колонки 'servings' в таблицу 'menu'...")
+        db.execute(text("ALTER TABLE menu ADD COLUMN servings INTEGER DEFAULT 1"))
+        db.commit()
+
+
+def _seed_default_menu(db):
+    """Наполняет меню примерами блюд на текущий день, если оно пусто."""
+    count = db.execute(text("SELECT COUNT(*) FROM menu")).scalar()
+    if count != 0:
+        return
+    today = date_cls.today().isoformat()
+    default_menu = [
+        (today, "breakfast", "Омлет с сыром", 1, 1),
+        (today, "lunch",     "Куриный суп",   4, 1),
+        (today, "dinner",    "Пюре с котлетой", 8, 1),
+        (today, "snack",     "Фрукты",        11, 1),
+    ]
+    for d, meal, txt, dish_id, servings in default_menu:
+        db.execute(text(
+            "INSERT INTO menu (date, meal_type, text, dish_id, servings) VALUES (:d, :m, :t, :did, :s)"
+        ), {"d": d, "m": meal, "t": txt, "did": dish_id, "s": servings})
+    db.commit()
+
+
+def _seed_dishes_from_csv(db):
+    """Загружает справочник блюд и ингредиентов из dishes.csv, если он пуст."""
+    dish_count = db.execute(text("SELECT COUNT(*) FROM dishes")).scalar()
+    if dish_count != 0:
+        return
+    csv_path = BASE_DIR / "dishes.csv"
+    if not csv_path.exists():
+        print(f"[init_db] ВНИМАНИЕ: файл {csv_path} не найден. Справочник пуст.")
+        return
+
+    dishes_map = {}
+    with open(csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            dish_name = (row.get("dish_name") or "").strip()
+            category  = (row.get("category") or "").strip()
+            if not dish_name:
+                continue
+            if dish_name not in dishes_map:
+                db.execute(text(
+                    "INSERT INTO dishes (name, category) VALUES (:n, :c)"
+                ), {"n": dish_name, "c": category})
+                db.commit()
+                new_id = db.execute(text("SELECT last_insert_rowid()")).scalar()
+                dishes_map[dish_name] = new_id
+            dish_id = dishes_map[dish_name]
+            ing_name = (row.get("ingredient_name") or "").strip()
+            if ing_name:
+                db.execute(text(
+                    "INSERT INTO ingredients (dish_id, name, quantity, unit) "
+                    "VALUES (:d, :n, :q, :u)"
+                ), {
+                    "d": dish_id,
+                    "n": ing_name,
+                    "q": (row.get("quantity") or "").strip(),
+                    "u": (row.get("unit") or "").strip()
+                })
+    db.commit()
+    print(f"[init_db] Загружено блюд из CSV: {len(dishes_map)}")
+
+
+def _seed_default_products(db):
+    """Наполняет справочник продуктов: стартовый список + импорт ингредиентов."""
+    product_count = db.execute(text("SELECT COUNT(*) FROM products")).scalar()
+    if product_count == 0:
+        default_products = [
+            ("Картофель", "г", "Овощи"), ("Морковь", "г", "Овощи"),
+            ("Лук", "г", "Овощи"), ("Помидоры", "г", "Овощи"),
+            ("Огурцы", "г", "Овощи"), ("Капуста", "г", "Овощи"),
+            ("Свекла", "г", "Овощи"), ("Перец болгарский", "г", "Овощи"),
+            ("Кабачки", "г", "Овощи"), ("Баклажаны", "г", "Овощи"),
+            ("Чеснок", "г", "Овощи"), ("Яблоки", "г", "Овощи"),
+            ("Бананы", "г", "Фрукты"), ("Апельсины", "г", "Фрукты"),
+            ("Лимоны", "г", "Фрукты"), ("Курица", "г", "Мясо"),
+            ("Говядина", "г", "Мясо"), ("Свинина", "г", "Мясо"),
+            ("Фарш", "г", "Мясо"), ("Бекон", "г", "Мясо"),
+            ("Колбаса", "г", "Мясо"), ("Индейка", "г", "Мясо"),
+            ("Рыба", "г", "Рыба"), ("Скумбрия", "г", "Рыба"),
+            ("Сельдь", "г", "Рыба"), ("Лосось", "г", "Рыба"),
+            ("Молоко", "мл", "Молочное"), ("Кефир", "мл", "Молочное"),
+            ("Сметана", "г", "Молочное"), ("Творог", "г", "Молочное"),
+            ("Сыр", "г", "Молочное"), ("Масло сливочное", "г", "Молочное"),
+            ("Йогурт", "г", "Молочное"), ("Рис", "г", "Крупы"),
+            ("Гречка", "г", "Крупы"), ("Манка", "г", "Крупы"),
+            ("Овсянка", "г", "Крупы"), ("Перловка", "г", "Крупы"),
+            ("Пшено", "г", "Крупы"), ("Макароны", "г", "Крупы"),
+            ("Спагетти", "г", "Крупы"), ("Мука", "г", "Крупы"),
+            ("Яйца", "шт", "Яйца"), ("Сахар", "г", "Прочее"),
+            ("Соль", "г", "Прочее"), ("Масло растительное", "мл", "Прочее"),
+            ("Грибы", "г", "Прочее"), ("Орехи", "г", "Прочее"),
+            ("Мёд", "г", "Прочее"),
+        ]
+        for p_name, p_unit, p_cat in default_products:
+            db.execute(text(
+                "INSERT INTO products (name, unit, category) VALUES (:n, :u, :c)"
+            ), {"n": p_name, "u": p_unit, "c": p_cat})
+        db.commit()
+        print(f"[init_db] Загружено продуктов: {len(default_products)}")
+
+    # Продукты из ингредиентов существующих блюд (для баз, созданных раньше
+    # справочника продуктов)
+    existing_names = {row[0].lower() for row in db.execute(text("SELECT name FROM products")).fetchall()}
+    ingredients = db.execute(text("SELECT DISTINCT name FROM ingredients")).fetchall()
+    added = 0
+    for (ing_name,) in ingredients:
+        if not ing_name:
+            continue
+        if ing_name.strip().lower() not in existing_names:
+            db.execute(text(
+                "INSERT INTO products (name, unit, category) VALUES (:n, :u, :c)"
+            ), {"n": ing_name.strip(), "u": "", "c": "Импорт"})
+            added += 1
+    if added:
+        db.commit()
+        print(f"[init_db] Добавлено продуктов из ингредиентов: {added}")
+
 
 def init_db():
+    """Инициализация БД: создание таблиц и наполнение стартовыми данными.
+
+    ЛР-8, Д-3: раньше здесь был один метод с цикломатической сложностью 21
+    (схема + миграция + три блока наполнения). Этапы выделены в хелперы,
+    каждый можно править и тестировать отдельно.
+    """
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        # Проверяем, существует ли колонка servings, и добавляем её при необходимости
-        # (для совместимости со старыми БД)
-        try:
-            db.execute(text("SELECT servings FROM menu LIMIT 1"))
-        except Exception:
-            print("[init_db] Добавление колонки 'servings' в таблицу 'menu'...")
-            db.execute(text("ALTER TABLE menu ADD COLUMN servings INTEGER DEFAULT 1"))
-            db.commit()
-
-        count = db.execute(text("SELECT COUNT(*) FROM menu")).scalar()
-        if count == 0:
-            today = date_cls.today().isoformat()
-            default_menu = [
-                (today, "breakfast", "Омлет с сыром", 1, 1),
-                (today, "lunch",     "Куриный суп",   4, 1),
-                (today, "dinner",    "Пюре с котлетой", 8, 1),
-                (today, "snack",     "Фрукты",        11, 1),
-            ]
-            for d, meal, txt, dish_id, servings in default_menu:
-                db.execute(text(
-                    "INSERT INTO menu (date, meal_type, text, dish_id, servings) VALUES (:d, :m, :t, :did, :s)"
-                ), {"d": d, "m": meal, "t": txt, "did": dish_id, "s": servings})
-            db.commit()
-
-        dish_count = db.execute(text("SELECT COUNT(*) FROM dishes")).scalar()
-        if dish_count == 0:
-            csv_path = BASE_DIR / "dishes.csv"
-            if not csv_path.exists():
-                print(f"[init_db] ВНИМАНИЕ: файл {csv_path} не найден. Справочник пуст.")
-            else:
-                dishes_map = {}
-                with open(csv_path, "r", encoding="utf-8") as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        dish_name = (row.get("dish_name") or "").strip()
-                        category  = (row.get("category") or "").strip()
-                        if not dish_name:
-                            continue
-                        if dish_name not in dishes_map:
-                            db.execute(text(
-                                "INSERT INTO dishes (name, category) VALUES (:n, :c)"
-                            ), {"n": dish_name, "c": category})
-                            db.commit()
-                            new_id = db.execute(text("SELECT last_insert_rowid()")).scalar()
-                            dishes_map[dish_name] = new_id
-                        dish_id = dishes_map[dish_name]
-                        ing_name = (row.get("ingredient_name") or "").strip()
-                        if ing_name:
-                            db.execute(text(
-                                "INSERT INTO ingredients (dish_id, name, quantity, unit) "
-                                "VALUES (:d, :n, :q, :u)"
-                            ), {
-                                "d": dish_id,
-                                "n": ing_name,
-                                "q": (row.get("quantity") or "").strip(),
-                                "u": (row.get("unit") or "").strip()
-                            })
-                db.commit()
-                print(f"[init_db] Загружено блюд из CSV: {len(dishes_map)}")
-
-        product_count = db.execute(text("SELECT COUNT(*) FROM products")).scalar()
-        if product_count == 0:
-            default_products = [
-                ("Картофель", "г", "Овощи"), ("Морковь", "г", "Овощи"),
-                ("Лук", "г", "Овощи"), ("Помидоры", "г", "Овощи"),
-                ("Огурцы", "г", "Овощи"), ("Капуста", "г", "Овощи"),
-                ("Свекла", "г", "Овощи"), ("Перец болгарский", "г", "Овощи"),
-                ("Кабачки", "г", "Овощи"), ("Баклажаны", "г", "Овощи"),
-                ("Чеснок", "г", "Овощи"), ("Яблоки", "г", "Овощи"),
-                ("Бананы", "г", "Фрукты"), ("Апельсины", "г", "Фрукты"),
-                ("Лимоны", "г", "Фрукты"), ("Курица", "г", "Мясо"),
-                ("Говядина", "г", "Мясо"), ("Свинина", "г", "Мясо"),
-                ("Фарш", "г", "Мясо"), ("Бекон", "г", "Мясо"),
-                ("Колбаса", "г", "Мясо"), ("Индейка", "г", "Мясо"),
-                ("Рыба", "г", "Рыба"), ("Скумбрия", "г", "Рыба"),
-                ("Сельдь", "г", "Рыба"), ("Лосось", "г", "Рыба"),
-                ("Молоко", "мл", "Молочное"), ("Кефир", "мл", "Молочное"),
-                ("Сметана", "г", "Молочное"), ("Творог", "г", "Молочное"),
-                ("Сыр", "г", "Молочное"), ("Масло сливочное", "г", "Молочное"),
-                ("Йогурт", "г", "Молочное"), ("Рис", "г", "Крупы"),
-                ("Гречка", "г", "Крупы"), ("Манка", "г", "Крупы"),
-                ("Овсянка", "г", "Крупы"), ("Перловка", "г", "Крупы"),
-                ("Пшено", "г", "Крупы"), ("Макароны", "г", "Крупы"),
-                ("Спагетти", "г", "Крупы"), ("Мука", "г", "Крупы"),
-                ("Яйца", "шт", "Яйца"), ("Сахар", "г", "Прочее"),
-                ("Соль", "г", "Прочее"), ("Масло растительное", "мл", "Прочее"),
-                ("Грибы", "г", "Прочее"), ("Орехи", "г", "Прочее"),
-                ("Мёд", "г", "Прочее"),
-            ]
-            for p_name, p_unit, p_cat in default_products:
-                db.execute(text(
-                    "INSERT INTO products (name, unit, category) VALUES (:n, :u, :c)"
-                ), {"n": p_name, "u": p_unit, "c": p_cat})
-            db.commit()
-            print(f"[init_db] Загружено продуктов: {len(default_products)}")
-
-        existing_names = {row[0].lower() for row in db.execute(text("SELECT name FROM products")).fetchall()}
-        ingredients = db.execute(text("SELECT DISTINCT name FROM ingredients")).fetchall()
-        added = 0
-        for (ing_name,) in ingredients:
-            if not ing_name:
-                continue
-            if ing_name.strip().lower() not in existing_names:
-                db.execute(text(
-                    "INSERT INTO products (name, unit, category) VALUES (:n, :u, :c)"
-                ), {"n": ing_name.strip(), "u": "", "c": "Импорт"})
-                added += 1
-        if added:
-            db.commit()
-            print(f"[init_db] Добавлено продуктов из ингредиентов: {added}")
+        _ensure_servings_column(db)
+        _seed_default_menu(db)
+        _seed_dishes_from_csv(db)
+        _seed_default_products(db)
     finally:
         db.close()
 
@@ -1757,396 +1803,359 @@ async def root():
 # ==================== API: МЕНЮ ====================
 
 @app.get("/api/menu")
-async def get_menu():
-    db = SessionLocal()
-    try:
-        items = db.query(Menu).order_by(Menu.date).all()
-        return [{"id": i.id, "date": i.date, "meal_type": i.meal_type,
-                 "text": i.text, "dish_id": i.dish_id, "servings": i.servings or 1} for i in items]
-    finally:
-        db.close()
+async def get_menu(db=Depends(get_db)):
+    items = db.query(Menu).order_by(Menu.date).all()
+    return [{"id": i.id, "date": i.date, "meal_type": i.meal_type,
+             "text": i.text, "dish_id": i.dish_id, "servings": i.servings or 1} for i in items]
 
 
 @app.post("/api/menu")
-async def create_menu(item: MenuItemCreate):
-    db = SessionLocal()
-    try:
-        existing = db.query(Menu).filter(
-            Menu.date == item.date,
-            Menu.meal_type == item.meal_type
-        ).first()
+async def create_menu(item: MenuItemCreate, db=Depends(get_db)):
+    existing = db.query(Menu).filter(
+        Menu.date == item.date,
+        Menu.meal_type == item.meal_type
+    ).first()
 
-        if existing:
-            existing.text = item.text
-            existing.dish_id = item.dish_id
-            existing.servings = item.servings # Обновляем порции
-            db.commit()
-            db.refresh(existing)
-            return {"id": existing.id, "date": existing.date, "meal_type": existing.meal_type,
-                    "text": existing.text, "dish_id": existing.dish_id, "servings": existing.servings}
-
-        db_item = Menu(date=item.date, meal_type=item.meal_type,
-                       text=item.text, dish_id=item.dish_id, servings=item.servings)
-        db.add(db_item)
+    if existing:
+        existing.text = item.text
+        existing.dish_id = item.dish_id
+        existing.servings = item.servings # Обновляем порции
         db.commit()
-        db.refresh(db_item)
-        return {"id": db_item.id, "date": db_item.date, "meal_type": db_item.meal_type,
-                "text": db_item.text, "dish_id": db_item.dish_id, "servings": db_item.servings}
-    finally:
-        db.close()
+        db.refresh(existing)
+        return {"id": existing.id, "date": existing.date, "meal_type": existing.meal_type,
+                "text": existing.text, "dish_id": existing.dish_id, "servings": existing.servings}
+
+    db_item = Menu(date=item.date, meal_type=item.meal_type,
+                   text=item.text, dish_id=item.dish_id, servings=item.servings)
+    db.add(db_item)
+    db.commit()
+    db.refresh(db_item)
+    return {"id": db_item.id, "date": db_item.date, "meal_type": db_item.meal_type,
+            "text": db_item.text, "dish_id": db_item.dish_id, "servings": db_item.servings}
 
 
 @app.delete("/api/menu/day/{date_str}")
-async def delete_day(date_str: str):
-    db = SessionLocal()
-    try:
-        db.query(Menu).filter(Menu.date == date_str).delete()
-        db.commit()
-        return {"message": "День удален"}
-    finally:
-        db.close()
+async def delete_day(date_str: str, db=Depends(get_db)):
+    db.query(Menu).filter(Menu.date == date_str).delete()
+    db.commit()
+    return {"message": "День удален"}
 
 
 # ==================== API: СЛУЧАЙНОЕ МЕНЮ ====================
 
+def _group_dishes_by_category(dishes):
+    """Группирует справочник блюд по категориям приёмов пищи."""
+    by_cat = {"breakfast": [], "lunch": [], "dinner": [], "snack": []}
+    for d in dishes:
+        if d.category in by_cat:
+            by_cat[d.category].append(d)
+    return by_cat
+
+
+def pick_dish_for_meal(by_cat, meal, used_today):
+    """Выбирает случайное блюдо приёма пищи, не повторяя его за день (ЛР-8, Д-4).
+
+    Если все блюда категории уже использованы в этот день — допускается
+    повтор. Раньше логика была встроена в generate_random_menu, из-за
+    чего у маршрута была цикломатическая сложность 12.
+    """
+    candidates = [d for d in by_cat[meal] if d.id not in used_today]
+    if not candidates:
+        candidates = by_cat[meal]
+    dish = random.choice(candidates)
+    used_today.add(dish.id)
+    return dish
+
+
 @app.post("/api/menu/random")
-async def generate_random_menu(req: RandomMenuRequest):
-    db = SessionLocal()
+async def generate_random_menu(req: RandomMenuRequest, db=Depends(get_db)):
     try:
-        try:
-            start = date_cls.fromisoformat(req.start_date)
-        except Exception:
-            raise HTTPException(400, "Неверный формат даты (нужно YYYY-MM-DD)")
+        start = date_cls.fromisoformat(req.start_date)
+    except Exception:
+        raise HTTPException(400, "Неверный формат даты (нужно YYYY-MM-DD)") from None
 
-        days = req.days if 1 <= req.days <= 30 else 7
+    days = req.days if 1 <= req.days <= 30 else 7
 
-        dishes = db.query(Dish).all()
-        by_cat = {"breakfast": [], "lunch": [], "dinner": [], "snack": []}
-        for d in dishes:
-            if d.category in by_cat:
-                by_cat[d.category].append(d)
+    by_cat = _group_dishes_by_category(db.query(Dish).all())
+    for meal in ["breakfast", "lunch", "dinner", "snack"]:
+        if not by_cat[meal]:
+            raise HTTPException(400, f"Нет блюд для категории «{meal}». "
+                                     f"Добавьте блюда в справочник.")
 
+    created = 0
+    for i in range(days):
+        current = (start + timedelta(days=i)).isoformat()
+        used_today = set()
         for meal in ["breakfast", "lunch", "dinner", "snack"]:
-            if not by_cat[meal]:
-                raise HTTPException(400, f"Нет блюд для категории «{meal}». "
-                                         f"Добавьте блюда в справочник.")
+            dish = pick_dish_for_meal(by_cat, meal, used_today)
 
-        created = 0
-        for i in range(days):
-            current = (start + timedelta(days=i)).isoformat()
-            used_today = set()
-            for meal in ["breakfast", "lunch", "dinner", "snack"]:
-                candidates = [d for d in by_cat[meal] if d.id not in used_today]
-                if not candidates:
-                    candidates = by_cat[meal]
-                dish = random.choice(candidates)
-                used_today.add(dish.id)
+            existing = db.query(Menu).filter(
+                Menu.date == current,
+                Menu.meal_type == meal
+            ).first()
 
-                existing = db.query(Menu).filter(
-                    Menu.date == current,
-                    Menu.meal_type == meal
-                ).first()
+            # При генерации ставим 1 порцию по умолчанию
+            if existing:
+                existing.text = dish.name
+                existing.dish_id = dish.id
+                existing.servings = 1
+            else:
+                db.add(Menu(date=current, meal_type=meal,
+                            text=dish.name, dish_id=dish.id, servings=1))
+            created += 1
 
-                # При генерации ставим 1 порцию по умолчанию
-                if existing:
-                    existing.text = dish.name
-                    existing.dish_id = dish.id
-                    existing.servings = 1
-                else:
-                    db.add(Menu(date=current, meal_type=meal,
-                                text=dish.name, dish_id=dish.id, servings=1))
-                created += 1
-
-        db.commit()
-        return {"message": f"Сгенерировано {created} записей на {days} дн."}
-    finally:
-        db.close()
+    db.commit()
+    return {"message": f"Сгенерировано {created} записей на {days} дн."}
 
 
 # ==================== API: ДУБЛИРОВАНИЕ ДНЯ ====================
 
 @app.post("/api/menu/duplicate")
-async def duplicate_menu(req: DuplicateMenuRequest):
-    db = SessionLocal()
-    try:
-        if not req.from_date or not req.to_date:
-            raise HTTPException(400, "Нужно указать обе даты")
+async def duplicate_menu(req: DuplicateMenuRequest, db=Depends(get_db)):
+    if not req.from_date or not req.to_date:
+        raise HTTPException(400, "Нужно указать обе даты")
 
-        if req.from_date == req.to_date:
-            raise HTTPException(400, "Исходная и целевая даты совпадают")
+    if req.from_date == req.to_date:
+        raise HTTPException(400, "Исходная и целевая даты совпадают")
 
-        source = db.query(Menu).filter(Menu.date == req.from_date).all()
-        if not source:
-            raise HTTPException(404, f"На {req.from_date} нет записей")
+    source = db.query(Menu).filter(Menu.date == req.from_date).all()
+    if not source:
+        raise HTTPException(404, f"На {req.from_date} нет записей")
 
-        target = db.query(Menu).filter(Menu.date == req.to_date).all()
-        if target and not req.overwrite:
-            raise HTTPException(
-                400,
-                f"На {req.to_date} уже есть записи. "
-                f"Поставьте галочку «Перезаписать», чтобы заменить"
-            )
+    target = db.query(Menu).filter(Menu.date == req.to_date).all()
+    if target and not req.overwrite:
+        raise HTTPException(
+            400,
+            f"На {req.to_date} уже есть записи. "
+            f"Поставьте галочку «Перезаписать», чтобы заменить"
+        )
 
-        if target:
-            db.query(Menu).filter(Menu.date == req.to_date).delete()
+    if target:
+        db.query(Menu).filter(Menu.date == req.to_date).delete()
 
-        for m in source:
-            db.add(Menu(date=req.to_date, meal_type=m.meal_type,
-                        text=m.text, dish_id=m.dish_id, servings=m.servings)) # Копируем порции
-        db.commit()
-        return {"message": f"Скопировано {len(source)} записей с "
-                           f"{req.from_date} на {req.to_date}"}
-    finally:
-        db.close()
+    for m in source:
+        db.add(Menu(date=req.to_date, meal_type=m.meal_type,
+                    text=m.text, dish_id=m.dish_id, servings=m.servings)) # Копируем порции
+    db.commit()
+    return {"message": f"Скопировано {len(source)} записей с "
+                       f"{req.from_date} на {req.to_date}"}
 
 
 # ==================== API: ИЗБРАННОЕ ====================
 
 @app.get("/api/favorites")
-async def get_favorites():
-    db = SessionLocal()
-    try:
-        items = db.query(Favorite).order_by(Favorite.id.desc()).all()
-        result = []
-        for f in items:
-            try:
-                data = json.loads(f.data or "[]")
-            except Exception:
-                data = []
-            offsets = {item.get("offset", 0) for item in data}
-            result.append({
-                "id": f.id,
-                "title": f.title,
-                "from_date": f.from_date,
-                "to_date": f.to_date,
-                "created_at": f.created_at,
-                "days_count": len(offsets)
-            })
-        return result
-    finally:
-        db.close()
+async def get_favorites(db=Depends(get_db)):
+    items = db.query(Favorite).order_by(Favorite.id.desc()).all()
+    result = []
+    for f in items:
+        try:
+            data = json.loads(f.data or "[]")
+        except Exception:
+            data = []
+        offsets = {item.get("offset", 0) for item in data}
+        result.append({
+            "id": f.id,
+            "title": f.title,
+            "from_date": f.from_date,
+            "to_date": f.to_date,
+            "created_at": f.created_at,
+            "days_count": len(offsets)
+        })
+    return result
 
 
 @app.post("/api/favorites")
-async def save_favorite(req: SaveFavoriteRequest):
-    db = SessionLocal()
+async def save_favorite(req: SaveFavoriteRequest, db=Depends(get_db)):
+    if not req.title.strip():
+        raise HTTPException(400, "Введите название шаблона")
+
     try:
-        if not req.title.strip():
-            raise HTTPException(400, "Введите название шаблона")
+        start = date_cls.fromisoformat(req.from_date)
+        end = date_cls.fromisoformat(req.to_date)
+    except Exception:
+        raise HTTPException(400, "Неверный формат даты") from None
 
+    if end < start:
+        raise HTTPException(400, "Дата 'по' раньше даты 'с'")
+
+    records = db.query(Menu).filter(
+        Menu.date >= req.from_date,
+        Menu.date <= req.to_date
+    ).all()
+
+    if not records:
+        raise HTTPException(404, "В указанном диапазоне нет записей меню")
+
+    items_data = []
+    for m in records:
         try:
-            start = date_cls.fromisoformat(req.from_date)
-            end = date_cls.fromisoformat(req.to_date)
+            m_date = date_cls.fromisoformat(m.date)
+            offset = (m_date - start).days
         except Exception:
-            raise HTTPException(400, "Неверный формат даты")
+            continue
+        items_data.append({
+            "offset": offset,
+            "meal_type": m.meal_type,
+            "text": m.text,
+            "dish_id": m.dish_id,
+            "servings": m.servings # Сохраняем порции в шаблон
+        })
 
-        if end < start:
-            raise HTTPException(400, "Дата 'по' раньше даты 'с'")
-
-        records = db.query(Menu).filter(
-            Menu.date >= req.from_date,
-            Menu.date <= req.to_date
-        ).all()
-
-        if not records:
-            raise HTTPException(404, "В указанном диапазоне нет записей меню")
-
-        items_data = []
-        for m in records:
-            try:
-                m_date = date_cls.fromisoformat(m.date)
-                offset = (m_date - start).days
-            except Exception:
-                continue
-            items_data.append({
-                "offset": offset,
-                "meal_type": m.meal_type,
-                "text": m.text,
-                "dish_id": m.dish_id,
-                "servings": m.servings # Сохраняем порции в шаблон
-            })
-
-        fav = Favorite(
-            title=req.title.strip(),
-            from_date=req.from_date,
-            to_date=req.to_date,
-            created_at=datetime.now().strftime("%d.%m.%Y %H:%M"),
-            data=json.dumps(items_data, ensure_ascii=False)
-        )
-        db.add(fav)
-        db.commit()
-        db.refresh(fav)
-        return {"id": fav.id, "title": fav.title}
-    finally:
-        db.close()
+    fav = Favorite(
+        title=req.title.strip(),
+        from_date=req.from_date,
+        to_date=req.to_date,
+        created_at=datetime.now().strftime("%d.%m.%Y %H:%M"),
+        data=json.dumps(items_data, ensure_ascii=False)
+    )
+    db.add(fav)
+    db.commit()
+    db.refresh(fav)
+    return {"id": fav.id, "title": fav.title}
 
 
 @app.delete("/api/favorites/{fav_id}")
-async def delete_favorite(fav_id: int):
-    db = SessionLocal()
-    try:
-        fav = db.query(Favorite).filter(Favorite.id == fav_id).first()
-        if not fav:
-            raise HTTPException(404, "Шаблон не найден")
-        db.delete(fav)
-        db.commit()
-        return {"message": "Шаблон удалён"}
-    finally:
-        db.close()
+async def delete_favorite(fav_id: int, db=Depends(get_db)):
+    fav = db.query(Favorite).filter(Favorite.id == fav_id).first()
+    if not fav:
+        raise HTTPException(404, "Шаблон не найден")
+    db.delete(fav)
+    db.commit()
+    return {"message": "Шаблон удалён"}
 
 
 @app.post("/api/favorites/apply")
-async def apply_favorite(req: ApplyFavoriteRequest):
-    db = SessionLocal()
+async def apply_favorite(req: ApplyFavoriteRequest, db=Depends(get_db)):
+    fav = db.query(Favorite).filter(Favorite.id == req.favorite_id).first()
+    if not fav:
+        raise HTTPException(404, "Шаблон не найден")
+
     try:
-        fav = db.query(Favorite).filter(Favorite.id == req.favorite_id).first()
-        if not fav:
-            raise HTTPException(404, "Шаблон не найден")
+        start = date_cls.fromisoformat(req.to_date)
+    except Exception:
+        raise HTTPException(400, "Неверный формат целевой даты") from None
 
-        try:
-            start = date_cls.fromisoformat(req.to_date)
-        except Exception:
-            raise HTTPException(400, "Неверный формат целевой даты")
+    items = json.loads(fav.data or "[]")
+    if not items:
+        raise HTTPException(400, "Шаблон пуст")
 
-        items = json.loads(fav.data or "[]")
-        if not items:
-            raise HTTPException(400, "Шаблон пуст")
+    offsets = [item.get("offset", 0) for item in items]
+    max_offset = max(offsets) if offsets else 0
 
-        offsets = [item.get("offset", 0) for item in items]
-        max_offset = max(offsets) if offsets else 0
+    affected_dates = [(start + timedelta(days=o)).isoformat() for o in range(max_offset + 1)]
+    existing = db.query(Menu).filter(Menu.date.in_(affected_dates)).count()
 
-        affected_dates = [(start + timedelta(days=o)).isoformat() for o in range(max_offset + 1)]
-        existing = db.query(Menu).filter(Menu.date.in_(affected_dates)).count()
+    if existing > 0 and not req.overwrite:
+        raise HTTPException(
+            400,
+            f"В диапазоне {affected_dates[0]} — {affected_dates[-1]} уже есть записи. "
+            f"Поставьте галочку «Перезаписать»"
+        )
 
-        if existing > 0 and not req.overwrite:
-            raise HTTPException(
-                400,
-                f"В диапазоне {affected_dates[0]} — {affected_dates[-1]} уже есть записи. "
-                f"Поставьте галочку «Перезаписать»"
-            )
+    if existing > 0 and req.overwrite:
+        db.query(Menu).filter(Menu.date.in_(affected_dates)).delete()
 
-        if existing > 0 and req.overwrite:
-            db.query(Menu).filter(Menu.date.in_(affected_dates)).delete()
+    created = 0
+    for item in items:
+        offset = item.get("offset", 0)
+        target_date = (start + timedelta(days=offset)).isoformat()
+        db.add(Menu(
+            date=target_date,
+            meal_type=item.get("meal_type", ""),
+            text=item.get("text", ""),
+            dish_id=item.get("dish_id"),
+            servings=item.get("servings", 1) # Восстанавливаем порции
+        ))
+        created += 1
 
-        created = 0
-        for item in items:
-            offset = item.get("offset", 0)
-            target_date = (start + timedelta(days=offset)).isoformat()
-            db.add(Menu(
-                date=target_date,
-                meal_type=item.get("meal_type", ""),
-                text=item.get("text", ""),
-                dish_id=item.get("dish_id"),
-                servings=item.get("servings", 1) # Восстанавливаем порции
-            ))
-            created += 1
-
-        db.commit()
-        return {"message": f"Применено {created} записей с {req.to_date}"}
-    finally:
-        db.close()
+    db.commit()
+    return {"message": f"Применено {created} записей с {req.to_date}"}
 
 
 # ==================== API: СПРАВОЧНИК БЛЮД ====================
 
 @app.get("/api/dishes")
-async def get_dishes():
-    db = SessionLocal()
-    try:
-        items = db.query(Dish).order_by(Dish.category, Dish.name).all()
-        return [{"id": d.id, "name": d.name, "category": d.category} for d in items]
-    finally:
-        db.close()
+async def get_dishes(db=Depends(get_db)):
+    items = db.query(Dish).order_by(Dish.category, Dish.name).all()
+    return [{"id": d.id, "name": d.name, "category": d.category} for d in items]
 
 
 @app.get("/api/dishes/{dish_id}/ingredients")
-async def get_dish_ingredients(dish_id: int):
-    db = SessionLocal()
-    try:
-        items = db.query(Ingredient).filter(Ingredient.dish_id == dish_id).all()
-        return [{"id": i.id, "name": i.name, "quantity": i.quantity, "unit": i.unit} for i in items]
-    finally:
-        db.close()
+async def get_dish_ingredients(dish_id: int, db=Depends(get_db)):
+    items = db.query(Ingredient).filter(Ingredient.dish_id == dish_id).all()
+    return [{"id": i.id, "name": i.name, "quantity": i.quantity, "unit": i.unit} for i in items]
 
 
 @app.post("/api/dishes")
-async def create_dish(item: DishCreate):
-    db = SessionLocal()
-    try:
-        existing = db.query(Dish).filter(Dish.name.ilike(item.name.strip())).first()
-        if existing:
-            raise HTTPException(400, f"Блюдо '{item.name}' уже существует в справочнике")
+async def create_dish(item: DishCreate, db=Depends(get_db)):
+    existing = db.query(Dish).filter(Dish.name.ilike(item.name.strip())).first()
+    if existing:
+        raise HTTPException(400, f"Блюдо '{item.name}' уже существует в справочнике")
 
-        db_item = Dish(name=item.name.strip(), category=item.category.strip())
-        db.add(db_item)
-        db.commit()
-        db.refresh(db_item)
+    db_item = Dish(name=item.name.strip(), category=item.category.strip())
+    db.add(db_item)
+    db.commit()
+    db.refresh(db_item)
 
-        for ing in item.ingredients:
-            ing_name = (ing.name or "").strip()
-            ing_qty  = (ing.quantity or "").strip()
-            ing_unit = (ing.unit or "").strip()
-            if ing_name:
-                db.execute(text(
-                    "INSERT INTO ingredients (dish_id, name, quantity, unit) "
-                    "VALUES (:d, :n, :q, :u)"
-                ), {"d": db_item.id, "n": ing_name, "q": ing_qty, "u": ing_unit})
-                _ensure_product(db, ing_name, ing_unit)
-        db.commit()
-        return {"id": db_item.id, "name": db_item.name, "category": db_item.category}
-    finally:
-        db.close()
+    replace_ingredients(db, db_item.id, item.ingredients)
+    db.commit()
+    return {"id": db_item.id, "name": db_item.name, "category": db_item.category}
 
 
 @app.put("/api/dishes/{dish_id}")
-async def update_dish(dish_id: int, item: DishCreate):
-    db = SessionLocal()
-    try:
-        db_item = db.query(Dish).filter(Dish.id == dish_id).first()
-        if not db_item:
-            raise HTTPException(404, "Блюдо не найдено")
+async def update_dish(dish_id: int, item: DishCreate, db=Depends(get_db)):
+    db_item = db.query(Dish).filter(Dish.id == dish_id).first()
+    if not db_item:
+        raise HTTPException(404, "Блюдо не найдено")
 
-        existing = db.query(Dish).filter(
-            Dish.name.ilike(item.name.strip()),
-            Dish.id != dish_id
-        ).first()
-        if existing:
-            raise HTTPException(400, f"Блюдо '{item.name}' уже существует")
+    existing = db.query(Dish).filter(
+        Dish.name.ilike(item.name.strip()),
+        Dish.id != dish_id
+    ).first()
+    if existing:
+        raise HTTPException(400, f"Блюдо '{item.name}' уже существует")
 
-        db_item.name = item.name.strip()
-        db_item.category = item.category.strip()
+    db_item.name = item.name.strip()
+    db_item.category = item.category.strip()
 
-        db.query(Ingredient).filter(Ingredient.dish_id == dish_id).delete()
-        for ing in item.ingredients:
-            ing_name = (ing.name or "").strip()
-            ing_qty  = (ing.quantity or "").strip()
-            ing_unit = (ing.unit or "").strip()
-            if ing_name:
-                db.execute(text(
-                    "INSERT INTO ingredients (dish_id, name, quantity, unit) "
-                    "VALUES (:d, :n, :q, :u)"
-                ), {"d": dish_id, "n": ing_name, "q": ing_qty, "u": ing_unit})
-                _ensure_product(db, ing_name, ing_unit)
+    # Полная замена набора ингредиентов блюда (ЛР-8, Д-2: раньше тот же
+    # цикл INSERT был скопирован в create_dish и update_dish)
+    db.query(Ingredient).filter(Ingredient.dish_id == dish_id).delete()
+    replace_ingredients(db, dish_id, item.ingredients)
 
-        db.commit()
-        return {"id": db_item.id, "name": db_item.name, "category": db_item.category}
-    finally:
-        db.close()
+    db.commit()
+    return {"id": db_item.id, "name": db_item.name, "category": db_item.category}
 
 
 @app.delete("/api/dishes/{dish_id}")
-async def delete_dish(dish_id: int):
-    db = SessionLocal()
-    try:
-        db.query(Ingredient).filter(Ingredient.dish_id == dish_id).delete()
-        db.query(Dish).filter(Dish.id == dish_id).delete()
-        db.commit()
-        return {"message": "Блюдо и ингредиенты удалены"}
-    finally:
-        db.close()
+async def delete_dish(dish_id: int, db=Depends(get_db)):
+    db.query(Ingredient).filter(Ingredient.dish_id == dish_id).delete()
+    db.query(Dish).filter(Dish.id == dish_id).delete()
+    db.commit()
+    return {"message": "Блюдо и ингредиенты удалены"}
 
 
 # ==================== ХЕЛПЕР ====================
+
+def replace_ingredients(db, dish_id, ingredients):
+    """Сохраняет набор ингредиентов блюда (ЛР-8, Д-2).
+
+    Общий код маршрутов create_dish и update_dish: пустые имена
+    пропускаются, каждый ингредиент вставляется параметризованным
+    запросом и регистрируется в справочнике продуктов.
+    """
+    for ing in ingredients:
+        ing_name = (ing.name or "").strip()
+        ing_qty = (ing.quantity or "").strip()
+        ing_unit = (ing.unit or "").strip()
+        if not ing_name:
+            continue
+        db.execute(text(
+            "INSERT INTO ingredients (dish_id, name, quantity, unit) "
+            "VALUES (:d, :n, :q, :u)"
+        ), {"d": dish_id, "n": ing_name, "q": ing_qty, "u": ing_unit})
+        _ensure_product(db, ing_name, ing_unit)
+
 
 def _ensure_product(db, name, unit=""):
     if not name:
@@ -2160,317 +2169,258 @@ def _ensure_product(db, name, unit=""):
 # ==================== API: СПРАВОЧНИК ПРОДУКТОВ ====================
 
 @app.get("/api/products")
-async def get_products():
-    db = SessionLocal()
-    try:
-        items = db.query(Product).order_by(Product.category, Product.name).all()
-        return [{"id": p.id, "name": p.name, "unit": p.unit, "category": p.category} for p in items]
-    finally:
-        db.close()
+async def get_products(db=Depends(get_db)):
+    items = db.query(Product).order_by(Product.category, Product.name).all()
+    return [{"id": p.id, "name": p.name, "unit": p.unit, "category": p.category} for p in items]
 
 
 @app.post("/api/products")
-async def create_product(item: ProductCreate):
-    db = SessionLocal()
-    try:
-        if not item.name.strip():
-            raise HTTPException(400, "Название продукта не может быть пустым")
-        existing = db.query(Product).filter(Product.name.ilike(item.name.strip())).first()
-        if existing:
-            raise HTTPException(400, f"Продукт '{item.name}' уже существует")
-        db_item = Product(
-            name=item.name.strip(),
-            unit=(item.unit or "").strip(),
-            category=(item.category or "").strip()
-        )
-        db.add(db_item)
-        db.commit()
-        db.refresh(db_item)
-        return {"id": db_item.id, "name": db_item.name, "unit": db_item.unit, "category": db_item.category}
-    finally:
-        db.close()
+async def create_product(item: ProductCreate, db=Depends(get_db)):
+    if not item.name.strip():
+        raise HTTPException(400, "Название продукта не может быть пустым")
+    existing = db.query(Product).filter(Product.name.ilike(item.name.strip())).first()
+    if existing:
+        raise HTTPException(400, f"Продукт '{item.name}' уже существует")
+    db_item = Product(
+        name=item.name.strip(),
+        unit=(item.unit or "").strip(),
+        category=(item.category or "").strip()
+    )
+    db.add(db_item)
+    db.commit()
+    db.refresh(db_item)
+    return {"id": db_item.id, "name": db_item.name, "unit": db_item.unit, "category": db_item.category}
 
 
 @app.put("/api/products/{product_id}")
-async def update_product(product_id: int, item: ProductCreate):
-    db = SessionLocal()
-    try:
-        db_item = db.query(Product).filter(Product.id == product_id).first()
-        if not db_item:
-            raise HTTPException(404, "Продукт не найден")
-        if not item.name.strip():
-            raise HTTPException(400, "Название продукта не может быть пустым")
-        existing = db.query(Product).filter(
-            Product.name.ilike(item.name.strip()),
-            Product.id != product_id
-        ).first()
-        if existing:
-            raise HTTPException(400, f"Продукт '{item.name}' уже существует")
-        db_item.name = item.name.strip()
-        db_item.unit = (item.unit or "").strip()
-        db_item.category = (item.category or "").strip()
-        db.commit()
-        db.refresh(db_item)
-        return {"id": db_item.id, "name": db_item.name, "unit": db_item.unit, "category": db_item.category}
-    finally:
-        db.close()
+async def update_product(product_id: int, item: ProductCreate, db=Depends(get_db)):
+    db_item = db.query(Product).filter(Product.id == product_id).first()
+    if not db_item:
+        raise HTTPException(404, "Продукт не найден")
+    if not item.name.strip():
+        raise HTTPException(400, "Название продукта не может быть пустым")
+    existing = db.query(Product).filter(
+        Product.name.ilike(item.name.strip()),
+        Product.id != product_id
+    ).first()
+    if existing:
+        raise HTTPException(400, f"Продукт '{item.name}' уже существует")
+    db_item.name = item.name.strip()
+    db_item.unit = (item.unit or "").strip()
+    db_item.category = (item.category or "").strip()
+    db.commit()
+    db.refresh(db_item)
+    return {"id": db_item.id, "name": db_item.name, "unit": db_item.unit, "category": db_item.category}
 
 
 @app.delete("/api/products/{product_id}")
-async def delete_product(product_id: int):
-    db = SessionLocal()
-    try:
-        db_item = db.query(Product).filter(Product.id == product_id).first()
-        if not db_item:
-            raise HTTPException(404, "Продукт не найден")
-        db.delete(db_item)
-        db.commit()
-        return {"message": "Продукт удалён"}
-    finally:
-        db.close()
+async def delete_product(product_id: int, db=Depends(get_db)):
+    db_item = db.query(Product).filter(Product.id == product_id).first()
+    if not db_item:
+        raise HTTPException(404, "Продукт не найден")
+    db.delete(db_item)
+    db.commit()
+    return {"message": "Продукт удалён"}
 
 
 # ==================== API: СПИСОК ПОКУПОК ====================
 
 @app.post("/api/shopping/generate")
-async def generate_shopping_from_menu():
+async def generate_shopping_from_menu(db=Depends(get_db)):
     """
     Функция 5. Формирование списка покупок с учетом количества порций.
     """
-    db = SessionLocal()
-    try:
-        menu_items = db.query(Menu).all()
-        # Словарь {dish_id: общее_количество_порций} считает shopping_calc (ЛР-7)
-        dish_servings = collect_servings(menu_items)
+    menu_items = db.query(Menu).all()
+    # Словарь {dish_id: общее_количество_порций} считает shopping_calc (ЛР-7)
+    dish_servings = collect_servings(menu_items)
 
-        if not dish_servings:
-            raise HTTPException(400, "В меню нет блюд — нечего собирать.")
+    if not dish_servings:
+        raise HTTPException(400, "В меню нет блюд — нечего собирать.")
 
-        # Получаем все ингредиенты для этих блюд
-        ingredients = db.query(Ingredient).filter(Ingredient.dish_id.in_(dish_servings.keys())).all()
+    # Получаем все ингредиенты для этих блюд
+    ingredients = db.query(Ingredient).filter(Ingredient.dish_id.in_(dish_servings.keys())).all()
 
-        rows = aggregate_ingredients(dish_servings, ingredients)
+    rows = aggregate_ingredients(dish_servings, ingredients)
 
-        db.query(Shopping).delete()
+    db.query(Shopping).delete()
 
-        for row in rows:
-            db.add(Shopping(
-                item_text=f"{row['name']} — {row['quantity']} {row['unit']}".strip(),
-                name=row["name"],
-                quantity=row["quantity"],
-                unit=row["unit"],
-                bought=0,
-                category=""
-            ))
+    for row in rows:
+        db.add(Shopping(
+            item_text=f"{row['name']} — {row['quantity']} {row['unit']}".strip(),
+            name=row["name"],
+            quantity=row["quantity"],
+            unit=row["unit"],
+            bought=0,
+            category=""
+        ))
 
-        db.commit()
-        count = db.query(Shopping).count()
-        return {"message": f"Сформировано {count} позиций для покупки (с учетом порций)."}
-    finally:
-        db.close()
+    db.commit()
+    count = db.query(Shopping).count()
+    return {"message": f"Сформировано {count} позиций для покупки (с учетом порций)."}
 
 
 @app.get("/api/shopping")
-async def get_shopping():
-    db = SessionLocal()
-    try:
-        items = db.query(Shopping).order_by(Shopping.name).all()
-        return [{
-            "id": i.id,
-            "name": i.name or i.item_text or "",
-            "quantity": i.quantity or "",
-            "unit": i.unit or "",
-            "bought": i.bought or 0,
-            "category": i.category or ""
-        } for i in items]
-    finally:
-        db.close()
+async def get_shopping(db=Depends(get_db)):
+    items = db.query(Shopping).order_by(Shopping.name).all()
+    return [{
+        "id": i.id,
+        "name": i.name or i.item_text or "",
+        "quantity": i.quantity or "",
+        "unit": i.unit or "",
+        "bought": i.bought or 0,
+        "category": i.category or ""
+    } for i in items]
 
 
 @app.post("/api/shopping")
-async def create_shopping_item(item: ShoppingItemCreate):
-    db = SessionLocal()
-    try:
-        if not item.name.strip():
-            raise HTTPException(400, "Название не может быть пустым")
-        db_item = Shopping(
-            item_text=item.name.strip(),
-            name=item.name.strip(),
-            quantity=(item.quantity or "").strip(),
-            unit=(item.unit or "").strip(),
-            bought=0,
-            category=(item.category or "").strip()
-        )
-        db.add(db_item)
-        db.commit()
-        db.refresh(db_item)
-        return {
-            "id": db_item.id, "name": db_item.name, "quantity": db_item.quantity,
-            "unit": db_item.unit, "bought": db_item.bought, "category": db_item.category
-        }
-    finally:
-        db.close()
+async def create_shopping_item(item: ShoppingItemCreate, db=Depends(get_db)):
+    if not item.name.strip():
+        raise HTTPException(400, "Название не может быть пустым")
+    db_item = Shopping(
+        item_text=item.name.strip(),
+        name=item.name.strip(),
+        quantity=(item.quantity or "").strip(),
+        unit=(item.unit or "").strip(),
+        bought=0,
+        category=(item.category or "").strip()
+    )
+    db.add(db_item)
+    db.commit()
+    db.refresh(db_item)
+    return {
+        "id": db_item.id, "name": db_item.name, "quantity": db_item.quantity,
+        "unit": db_item.unit, "bought": db_item.bought, "category": db_item.category
+    }
 
 
 @app.put("/api/shopping/{item_id}")
-async def update_shopping_item(item_id: int, item: ShoppingItemUpdate):
-    db = SessionLocal()
-    try:
-        db_item = db.query(Shopping).filter(Shopping.id == item_id).first()
-        if not db_item:
-            raise HTTPException(404, "Позиция не найдена")
-        if item.name is not None:
-            db_item.name = item.name.strip()
-            db_item.item_text = item.name.strip()
-        if item.quantity is not None:
-            db_item.quantity = item.quantity.strip()
-        if item.unit is not None:
-            db_item.unit = item.unit.strip()
-        if item.category is not None:
-            db_item.category = item.category.strip()
-        if item.bought is not None:
-            db_item.bought = 1 if item.bought else 0
-        db.commit()
-        db.refresh(db_item)
-        return {
-            "id": db_item.id, "name": db_item.name, "quantity": db_item.quantity,
-            "unit": db_item.unit, "bought": db_item.bought, "category": db_item.category
-        }
-    finally:
-        db.close()
+async def update_shopping_item(item_id: int, item: ShoppingItemUpdate, db=Depends(get_db)):
+    db_item = db.query(Shopping).filter(Shopping.id == item_id).first()
+    if not db_item:
+        raise HTTPException(404, "Позиция не найдена")
+    if item.name is not None:
+        db_item.name = item.name.strip()
+        db_item.item_text = item.name.strip()
+    if item.quantity is not None:
+        db_item.quantity = item.quantity.strip()
+    if item.unit is not None:
+        db_item.unit = item.unit.strip()
+    if item.category is not None:
+        db_item.category = item.category.strip()
+    if item.bought is not None:
+        db_item.bought = 1 if item.bought else 0
+    db.commit()
+    db.refresh(db_item)
+    return {
+        "id": db_item.id, "name": db_item.name, "quantity": db_item.quantity,
+        "unit": db_item.unit, "bought": db_item.bought, "category": db_item.category
+    }
 
 
 @app.patch("/api/shopping/{item_id}/toggle")
-async def toggle_shopping_bought(item_id: int):
-    db = SessionLocal()
-    try:
-        db_item = db.query(Shopping).filter(Shopping.id == item_id).first()
-        if not db_item:
-            raise HTTPException(404, "Позиция не найдена")
-        db_item.bought = 0 if (db_item.bought or 0) else 1
-        db.commit()
-        db.refresh(db_item)
-        return {"id": db_item.id, "bought": db_item.bought}
-    finally:
-        db.close()
+async def toggle_shopping_bought(item_id: int, db=Depends(get_db)):
+    db_item = db.query(Shopping).filter(Shopping.id == item_id).first()
+    if not db_item:
+        raise HTTPException(404, "Позиция не найдена")
+    db_item.bought = 0 if (db_item.bought or 0) else 1
+    db.commit()
+    db.refresh(db_item)
+    return {"id": db_item.id, "bought": db_item.bought}
 
 
 @app.delete("/api/shopping/{item_id}")
-async def delete_shopping_item(item_id: int):
-    db = SessionLocal()
-    try:
-        db_item = db.query(Shopping).filter(Shopping.id == item_id).first()
-        if not db_item:
-            raise HTTPException(404, "Позиция не найдена")
-        db.delete(db_item)
-        db.commit()
-        return {"message": "Позиция удалена"}
-    finally:
-        db.close()
+async def delete_shopping_item(item_id: int, db=Depends(get_db)):
+    db_item = db.query(Shopping).filter(Shopping.id == item_id).first()
+    if not db_item:
+        raise HTTPException(404, "Позиция не найдена")
+    db.delete(db_item)
+    db.commit()
+    return {"message": "Позиция удалена"}
 
 
 @app.delete("/api/shopping")
-async def clear_shopping():
-    db = SessionLocal()
-    try:
-        db.query(Shopping).delete()
-        db.commit()
-        return {"message": "Список покупок очищен"}
-    finally:
-        db.close()
+async def clear_shopping(db=Depends(get_db)):
+    db.query(Shopping).delete()
+    db.commit()
+    return {"message": "Список покупок очищен"}
 
 
 @app.get("/api/shopping/export")
-async def export_shopping():
+async def export_shopping(db=Depends(get_db)):
     """Возвращает только некупленные позиции (итоговый список к покупке)."""
-    db = SessionLocal()
-    try:
-        items = db.query(Shopping).filter(Shopping.bought == 0).order_by(Shopping.name).all()
-        return [{
-            "name": i.name or i.item_text or "",
-            "quantity": i.quantity or "",
-            "unit": i.unit or ""
-        } for i in items]
-    finally:
-        db.close()
+    items = db.query(Shopping).filter(Shopping.bought == 0).order_by(Shopping.name).all()
+    return [{
+        "name": i.name or i.item_text or "",
+        "quantity": i.quantity or "",
+        "unit": i.unit or ""
+    } for i in items]
 
 
 # ==================== API: ПОЛНЫЙ ОТЧЁТ ====================
 
 @app.get("/api/report")
-async def get_report():
-    db = SessionLocal()
-    try:
-        menu_items = db.query(Menu).order_by(Menu.date, Menu.meal_type).all()
-        dish_ids = list({m.dish_id for m in menu_items if m.dish_id})
-        ingredients_by_dish = {}
-        if dish_ids:
-            ings = db.query(Ingredient).filter(Ingredient.dish_id.in_(dish_ids)).all()
-            for ing in ings:
-                ingredients_by_dish.setdefault(ing.dish_id, []).append({
-                    "name": ing.name, "quantity": ing.quantity, "unit": ing.unit
-                })
-        days = {}
-        for m in menu_items:
-            days.setdefault(m.date, {})
-            days[m.date][m.meal_type] = {
-                "dish_id": m.dish_id,
-                "dish_name": m.text,
-                "servings": m.servings or 1,
-                "ingredients": ingredients_by_dish.get(m.dish_id, [])
-            }
-        aggregated = {}
-        for m in menu_items:
-            for ing in ingredients_by_dish.get(m.dish_id, []):
-                key = (ing["name"], ing["unit"] or "")
-                # Количество может быть с запятой («50,5») — разбираем так же,
-                # как и список покупок (исправление баг-репорта ЛР-7 № 2)
-                qty_num, _ = parse_quantity(ing["quantity"])
-                qty = qty_num or 0
-                # Умножаем на порции в отчете
-                aggregated[key] = aggregated.get(key, 0) + (qty * (m.servings or 1))
-        summary = [{"name": k[0], "unit": k[1], "quantity": v} for k, v in aggregated.items()]
-        return {
-            "days": days,
-            "summary": summary,
-            "generated_at": datetime.now().isoformat()
+async def get_report(db=Depends(get_db)):
+    menu_items = db.query(Menu).order_by(Menu.date, Menu.meal_type).all()
+    dish_ids = list({m.dish_id for m in menu_items if m.dish_id})
+    ingredients_by_dish = {}
+    if dish_ids:
+        ings = db.query(Ingredient).filter(Ingredient.dish_id.in_(dish_ids)).all()
+        for ing in ings:
+            ingredients_by_dish.setdefault(ing.dish_id, []).append({
+                "name": ing.name, "quantity": ing.quantity, "unit": ing.unit
+            })
+    days = {}
+    for m in menu_items:
+        days.setdefault(m.date, {})
+        days[m.date][m.meal_type] = {
+            "dish_id": m.dish_id,
+            "dish_name": m.text,
+            "servings": m.servings or 1,
+            "ingredients": ingredients_by_dish.get(m.dish_id, [])
         }
-    finally:
-        db.close()
+    aggregated = {}
+    for m in menu_items:
+        for ing in ingredients_by_dish.get(m.dish_id, []):
+            key = (ing["name"], ing["unit"] or "")
+            # Количество может быть с запятой («50,5») — разбираем так же,
+            # как и список покупок (исправление баг-репорта ЛР-7 № 2)
+            qty_num, _ = parse_quantity(ing["quantity"])
+            qty = qty_num or 0
+            # Умножаем на порции в отчете
+            aggregated[key] = aggregated.get(key, 0) + (qty * (m.servings or 1))
+    summary = [{"name": k[0], "unit": k[1], "quantity": v} for k, v in aggregated.items()]
+    return {
+        "days": days,
+        "summary": summary,
+        "generated_at": datetime.now().isoformat()
+    }
 
 
 # ==================== API: ОЧИСТКА ====================
 
 @app.post("/api/clear")
-async def clear_all():
-    db = SessionLocal()
-    try:
-        db.query(Menu).delete()
-        db.query(Shopping).delete()
-        db.commit()
-        return {"message": "Очищено"}
-    finally:
-        db.close()
+async def clear_all(db=Depends(get_db)):
+    db.query(Menu).delete()
+    db.query(Shopping).delete()
+    db.commit()
+    return {"message": "Очищено"}
 
 # ==================== ПАТТЕРН СТРАТЕГИЯ (SOLID / OCP) ====================
 # Алгоритмы экспорта вынесены в отдельный модуль export_strategies.py:
 # классы стратегий и реестр STRATEGIES выбираются по формату запроса.
 
 @app.get("/api/shopping/export/strategy")
-async def export_shopping_strategy(format: str = "txt"):
-    db = SessionLocal()
-    try:
-        items = db.query(Shopping).filter(Shopping.bought == 0).all()
-        data = [{"name": i.name, "quantity": i.quantity, "unit": i.unit} for i in items]
-        strategy = get_strategy(format)
-        return {"data": strategy.export(data)}
-    finally:
-        db.close()
+async def export_shopping_strategy(format: str = "txt", db=Depends(get_db)):
+    items = db.query(Shopping).filter(Shopping.bought == 0).all()
+    data = [{"name": i.name, "quantity": i.quantity, "unit": i.unit} for i in items]
+    strategy = get_strategy(format)
+    return {"data": strategy.export(data)}
+
+import logging
+import threading
+import webbrowser
 
 import uvicorn
-import logging
-import webbrowser
-import threading
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
