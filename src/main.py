@@ -2050,16 +2050,7 @@ async def create_dish(item: DishCreate, db=Depends(get_db)):
     db.commit()
     db.refresh(db_item)
 
-    for ing in item.ingredients:
-        ing_name = (ing.name or "").strip()
-        ing_qty  = (ing.quantity or "").strip()
-        ing_unit = (ing.unit or "").strip()
-        if ing_name:
-            db.execute(text(
-                "INSERT INTO ingredients (dish_id, name, quantity, unit) "
-                "VALUES (:d, :n, :q, :u)"
-            ), {"d": db_item.id, "n": ing_name, "q": ing_qty, "u": ing_unit})
-            _ensure_product(db, ing_name, ing_unit)
+    replace_ingredients(db, db_item.id, item.ingredients)
     db.commit()
     return {"id": db_item.id, "name": db_item.name, "category": db_item.category}
 
@@ -2080,17 +2071,10 @@ async def update_dish(dish_id: int, item: DishCreate, db=Depends(get_db)):
     db_item.name = item.name.strip()
     db_item.category = item.category.strip()
 
+    # Полная замена набора ингредиентов блюда (ЛР-8, Д-2: раньше тот же
+    # цикл INSERT был скопирован в create_dish и update_dish)
     db.query(Ingredient).filter(Ingredient.dish_id == dish_id).delete()
-    for ing in item.ingredients:
-        ing_name = (ing.name or "").strip()
-        ing_qty  = (ing.quantity or "").strip()
-        ing_unit = (ing.unit or "").strip()
-        if ing_name:
-            db.execute(text(
-                "INSERT INTO ingredients (dish_id, name, quantity, unit) "
-                "VALUES (:d, :n, :q, :u)"
-            ), {"d": dish_id, "n": ing_name, "q": ing_qty, "u": ing_unit})
-            _ensure_product(db, ing_name, ing_unit)
+    replace_ingredients(db, dish_id, item.ingredients)
 
     db.commit()
     return {"id": db_item.id, "name": db_item.name, "category": db_item.category}
@@ -2105,6 +2089,26 @@ async def delete_dish(dish_id: int, db=Depends(get_db)):
 
 
 # ==================== ХЕЛПЕР ====================
+
+def replace_ingredients(db, dish_id, ingredients):
+    """Сохраняет набор ингредиентов блюда (ЛР-8, Д-2).
+
+    Общий код маршрутов create_dish и update_dish: пустые имена
+    пропускаются, каждый ингредиент вставляется параметризованным
+    запросом и регистрируется в справочнике продуктов.
+    """
+    for ing in ingredients:
+        ing_name = (ing.name or "").strip()
+        ing_qty = (ing.quantity or "").strip()
+        ing_unit = (ing.unit or "").strip()
+        if not ing_name:
+            continue
+        db.execute(text(
+            "INSERT INTO ingredients (dish_id, name, quantity, unit) "
+            "VALUES (:d, :n, :q, :u)"
+        ), {"d": dish_id, "n": ing_name, "q": ing_qty, "u": ing_unit})
+        _ensure_product(db, ing_name, ing_unit)
+
 
 def _ensure_product(db, name, unit=""):
     if not name:
