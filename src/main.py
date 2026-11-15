@@ -34,121 +34,146 @@ def get_db():
 
 
 # ==================== ИНИЦИАЛИЗАЦИЯ БД ====================
+def _ensure_servings_column(db):
+    """Миграция для старых БД: добавляет колонку servings, если её нет."""
+    try:
+        db.execute(text("SELECT servings FROM menu LIMIT 1"))
+    except Exception:
+        print("[init_db] Добавление колонки 'servings' в таблицу 'menu'...")
+        db.execute(text("ALTER TABLE menu ADD COLUMN servings INTEGER DEFAULT 1"))
+        db.commit()
+
+
+def _seed_default_menu(db):
+    """Наполняет меню примерами блюд на текущий день, если оно пусто."""
+    count = db.execute(text("SELECT COUNT(*) FROM menu")).scalar()
+    if count != 0:
+        return
+    today = date_cls.today().isoformat()
+    default_menu = [
+        (today, "breakfast", "Омлет с сыром", 1, 1),
+        (today, "lunch",     "Куриный суп",   4, 1),
+        (today, "dinner",    "Пюре с котлетой", 8, 1),
+        (today, "snack",     "Фрукты",        11, 1),
+    ]
+    for d, meal, txt, dish_id, servings in default_menu:
+        db.execute(text(
+            "INSERT INTO menu (date, meal_type, text, dish_id, servings) VALUES (:d, :m, :t, :did, :s)"
+        ), {"d": d, "m": meal, "t": txt, "did": dish_id, "s": servings})
+    db.commit()
+
+
+def _seed_dishes_from_csv(db):
+    """Загружает справочник блюд и ингредиентов из dishes.csv, если он пуст."""
+    dish_count = db.execute(text("SELECT COUNT(*) FROM dishes")).scalar()
+    if dish_count != 0:
+        return
+    csv_path = BASE_DIR / "dishes.csv"
+    if not csv_path.exists():
+        print(f"[init_db] ВНИМАНИЕ: файл {csv_path} не найден. Справочник пуст.")
+        return
+
+    dishes_map = {}
+    with open(csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            dish_name = (row.get("dish_name") or "").strip()
+            category  = (row.get("category") or "").strip()
+            if not dish_name:
+                continue
+            if dish_name not in dishes_map:
+                db.execute(text(
+                    "INSERT INTO dishes (name, category) VALUES (:n, :c)"
+                ), {"n": dish_name, "c": category})
+                db.commit()
+                new_id = db.execute(text("SELECT last_insert_rowid()")).scalar()
+                dishes_map[dish_name] = new_id
+            dish_id = dishes_map[dish_name]
+            ing_name = (row.get("ingredient_name") or "").strip()
+            if ing_name:
+                db.execute(text(
+                    "INSERT INTO ingredients (dish_id, name, quantity, unit) "
+                    "VALUES (:d, :n, :q, :u)"
+                ), {
+                    "d": dish_id,
+                    "n": ing_name,
+                    "q": (row.get("quantity") or "").strip(),
+                    "u": (row.get("unit") or "").strip()
+                })
+    db.commit()
+    print(f"[init_db] Загружено блюд из CSV: {len(dishes_map)}")
+
+
+def _seed_default_products(db):
+    """Наполняет справочник продуктов: стартовый список + импорт ингредиентов."""
+    product_count = db.execute(text("SELECT COUNT(*) FROM products")).scalar()
+    if product_count == 0:
+        default_products = [
+            ("Картофель", "г", "Овощи"), ("Морковь", "г", "Овощи"),
+            ("Лук", "г", "Овощи"), ("Помидоры", "г", "Овощи"),
+            ("Огурцы", "г", "Овощи"), ("Капуста", "г", "Овощи"),
+            ("Свекла", "г", "Овощи"), ("Перец болгарский", "г", "Овощи"),
+            ("Кабачки", "г", "Овощи"), ("Баклажаны", "г", "Овощи"),
+            ("Чеснок", "г", "Овощи"), ("Яблоки", "г", "Овощи"),
+            ("Бананы", "г", "Фрукты"), ("Апельсины", "г", "Фрукты"),
+            ("Лимоны", "г", "Фрукты"), ("Курица", "г", "Мясо"),
+            ("Говядина", "г", "Мясо"), ("Свинина", "г", "Мясо"),
+            ("Фарш", "г", "Мясо"), ("Бекон", "г", "Мясо"),
+            ("Колбаса", "г", "Мясо"), ("Индейка", "г", "Мясо"),
+            ("Рыба", "г", "Рыба"), ("Скумбрия", "г", "Рыба"),
+            ("Сельдь", "г", "Рыба"), ("Лосось", "г", "Рыба"),
+            ("Молоко", "мл", "Молочное"), ("Кефир", "мл", "Молочное"),
+            ("Сметана", "г", "Молочное"), ("Творог", "г", "Молочное"),
+            ("Сыр", "г", "Молочное"), ("Масло сливочное", "г", "Молочное"),
+            ("Йогурт", "г", "Молочное"), ("Рис", "г", "Крупы"),
+            ("Гречка", "г", "Крупы"), ("Манка", "г", "Крупы"),
+            ("Овсянка", "г", "Крупы"), ("Перловка", "г", "Крупы"),
+            ("Пшено", "г", "Крупы"), ("Макароны", "г", "Крупы"),
+            ("Спагетти", "г", "Крупы"), ("Мука", "г", "Крупы"),
+            ("Яйца", "шт", "Яйца"), ("Сахар", "г", "Прочее"),
+            ("Соль", "г", "Прочее"), ("Масло растительное", "мл", "Прочее"),
+            ("Грибы", "г", "Прочее"), ("Орехи", "г", "Прочее"),
+            ("Мёд", "г", "Прочее"),
+        ]
+        for p_name, p_unit, p_cat in default_products:
+            db.execute(text(
+                "INSERT INTO products (name, unit, category) VALUES (:n, :u, :c)"
+            ), {"n": p_name, "u": p_unit, "c": p_cat})
+        db.commit()
+        print(f"[init_db] Загружено продуктов: {len(default_products)}")
+
+    # Продукты из ингредиентов существующих блюд (для баз, созданных раньше
+    # справочника продуктов)
+    existing_names = {row[0].lower() for row in db.execute(text("SELECT name FROM products")).fetchall()}
+    ingredients = db.execute(text("SELECT DISTINCT name FROM ingredients")).fetchall()
+    added = 0
+    for (ing_name,) in ingredients:
+        if not ing_name:
+            continue
+        if ing_name.strip().lower() not in existing_names:
+            db.execute(text(
+                "INSERT INTO products (name, unit, category) VALUES (:n, :u, :c)"
+            ), {"n": ing_name.strip(), "u": "", "c": "Импорт"})
+            added += 1
+    if added:
+        db.commit()
+        print(f"[init_db] Добавлено продуктов из ингредиентов: {added}")
+
 
 def init_db():
+    """Инициализация БД: создание таблиц и наполнение стартовыми данными.
+
+    ЛР-8, Д-3: раньше здесь был один метод с цикломатической сложностью 21
+    (схема + миграция + три блока наполнения). Этапы выделены в хелперы,
+    каждый можно править и тестировать отдельно.
+    """
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        # Проверяем, существует ли колонка servings, и добавляем её при необходимости
-        # (для совместимости со старыми БД)
-        try:
-            db.execute(text("SELECT servings FROM menu LIMIT 1"))
-        except Exception:
-            print("[init_db] Добавление колонки 'servings' в таблицу 'menu'...")
-            db.execute(text("ALTER TABLE menu ADD COLUMN servings INTEGER DEFAULT 1"))
-            db.commit()
-
-        count = db.execute(text("SELECT COUNT(*) FROM menu")).scalar()
-        if count == 0:
-            today = date_cls.today().isoformat()
-            default_menu = [
-                (today, "breakfast", "Омлет с сыром", 1, 1),
-                (today, "lunch",     "Куриный суп",   4, 1),
-                (today, "dinner",    "Пюре с котлетой", 8, 1),
-                (today, "snack",     "Фрукты",        11, 1),
-            ]
-            for d, meal, txt, dish_id, servings in default_menu:
-                db.execute(text(
-                    "INSERT INTO menu (date, meal_type, text, dish_id, servings) VALUES (:d, :m, :t, :did, :s)"
-                ), {"d": d, "m": meal, "t": txt, "did": dish_id, "s": servings})
-            db.commit()
-
-        dish_count = db.execute(text("SELECT COUNT(*) FROM dishes")).scalar()
-        if dish_count == 0:
-            csv_path = BASE_DIR / "dishes.csv"
-            if not csv_path.exists():
-                print(f"[init_db] ВНИМАНИЕ: файл {csv_path} не найден. Справочник пуст.")
-            else:
-                dishes_map = {}
-                with open(csv_path, "r", encoding="utf-8") as f:
-                    reader = csv.DictReader(f)
-                    for row in reader:
-                        dish_name = (row.get("dish_name") or "").strip()
-                        category  = (row.get("category") or "").strip()
-                        if not dish_name:
-                            continue
-                        if dish_name not in dishes_map:
-                            db.execute(text(
-                                "INSERT INTO dishes (name, category) VALUES (:n, :c)"
-                            ), {"n": dish_name, "c": category})
-                            db.commit()
-                            new_id = db.execute(text("SELECT last_insert_rowid()")).scalar()
-                            dishes_map[dish_name] = new_id
-                        dish_id = dishes_map[dish_name]
-                        ing_name = (row.get("ingredient_name") or "").strip()
-                        if ing_name:
-                            db.execute(text(
-                                "INSERT INTO ingredients (dish_id, name, quantity, unit) "
-                                "VALUES (:d, :n, :q, :u)"
-                            ), {
-                                "d": dish_id,
-                                "n": ing_name,
-                                "q": (row.get("quantity") or "").strip(),
-                                "u": (row.get("unit") or "").strip()
-                            })
-                db.commit()
-                print(f"[init_db] Загружено блюд из CSV: {len(dishes_map)}")
-
-        product_count = db.execute(text("SELECT COUNT(*) FROM products")).scalar()
-        if product_count == 0:
-            default_products = [
-                ("Картофель", "г", "Овощи"), ("Морковь", "г", "Овощи"),
-                ("Лук", "г", "Овощи"), ("Помидоры", "г", "Овощи"),
-                ("Огурцы", "г", "Овощи"), ("Капуста", "г", "Овощи"),
-                ("Свекла", "г", "Овощи"), ("Перец болгарский", "г", "Овощи"),
-                ("Кабачки", "г", "Овощи"), ("Баклажаны", "г", "Овощи"),
-                ("Чеснок", "г", "Овощи"), ("Яблоки", "г", "Овощи"),
-                ("Бананы", "г", "Фрукты"), ("Апельсины", "г", "Фрукты"),
-                ("Лимоны", "г", "Фрукты"), ("Курица", "г", "Мясо"),
-                ("Говядина", "г", "Мясо"), ("Свинина", "г", "Мясо"),
-                ("Фарш", "г", "Мясо"), ("Бекон", "г", "Мясо"),
-                ("Колбаса", "г", "Мясо"), ("Индейка", "г", "Мясо"),
-                ("Рыба", "г", "Рыба"), ("Скумбрия", "г", "Рыба"),
-                ("Сельдь", "г", "Рыба"), ("Лосось", "г", "Рыба"),
-                ("Молоко", "мл", "Молочное"), ("Кефир", "мл", "Молочное"),
-                ("Сметана", "г", "Молочное"), ("Творог", "г", "Молочное"),
-                ("Сыр", "г", "Молочное"), ("Масло сливочное", "г", "Молочное"),
-                ("Йогурт", "г", "Молочное"), ("Рис", "г", "Крупы"),
-                ("Гречка", "г", "Крупы"), ("Манка", "г", "Крупы"),
-                ("Овсянка", "г", "Крупы"), ("Перловка", "г", "Крупы"),
-                ("Пшено", "г", "Крупы"), ("Макароны", "г", "Крупы"),
-                ("Спагетти", "г", "Крупы"), ("Мука", "г", "Крупы"),
-                ("Яйца", "шт", "Яйца"), ("Сахар", "г", "Прочее"),
-                ("Соль", "г", "Прочее"), ("Масло растительное", "мл", "Прочее"),
-                ("Грибы", "г", "Прочее"), ("Орехи", "г", "Прочее"),
-                ("Мёд", "г", "Прочее"),
-            ]
-            for p_name, p_unit, p_cat in default_products:
-                db.execute(text(
-                    "INSERT INTO products (name, unit, category) VALUES (:n, :u, :c)"
-                ), {"n": p_name, "u": p_unit, "c": p_cat})
-            db.commit()
-            print(f"[init_db] Загружено продуктов: {len(default_products)}")
-
-        existing_names = {row[0].lower() for row in db.execute(text("SELECT name FROM products")).fetchall()}
-        ingredients = db.execute(text("SELECT DISTINCT name FROM ingredients")).fetchall()
-        added = 0
-        for (ing_name,) in ingredients:
-            if not ing_name:
-                continue
-            if ing_name.strip().lower() not in existing_names:
-                db.execute(text(
-                    "INSERT INTO products (name, unit, category) VALUES (:n, :u, :c)"
-                ), {"n": ing_name.strip(), "u": "", "c": "Импорт"})
-                added += 1
-        if added:
-            db.commit()
-            print(f"[init_db] Добавлено продуктов из ингредиентов: {added}")
+        _ensure_servings_column(db)
+        _seed_default_menu(db)
+        _seed_dishes_from_csv(db)
+        _seed_default_products(db)
     finally:
         db.close()
 
