@@ -1,23 +1,30 @@
 import csv
 import json
 import random
-import io
-from datetime import date as date_cls, timedelta, datetime
+from datetime import date as date_cls
+from datetime import datetime, timedelta
+
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from sqlalchemy import text
-from pydantic import BaseModel
 
 from database import BASE_DIR, Base, SessionLocal, engine
 from export_strategies import get_strategy
-from models import Menu, Shopping, Dish, Ingredient, Product, Favorite
+from models import Dish, Favorite, Ingredient, Menu, Product, Shopping
 from quantity import parse_quantity
-from shopping_calc import aggregate_ingredients, collect_servings
 from schemas import (
-    MenuItemCreate, ShoppingItemCreate, ShoppingItemUpdate, DishIngredient,
-    DishCreate, ProductCreate, RandomMenuRequest, DuplicateMenuRequest,
-    SaveFavoriteRequest, ApplyFavoriteRequest
+    ApplyFavoriteRequest,
+    DishCreate,
+    DuplicateMenuRequest,
+    MenuItemCreate,
+    ProductCreate,
+    RandomMenuRequest,
+    SaveFavoriteRequest,
+    ShoppingItemCreate,
+    ShoppingItemUpdate,
 )
+from shopping_calc import aggregate_ingredients, collect_servings
+
 
 def get_db():
     """Выдаёт сессию БД и гарантированно закрывает её (ЛР-8, Д-1).
@@ -1836,21 +1843,40 @@ async def delete_day(date_str: str, db=Depends(get_db)):
 
 # ==================== API: СЛУЧАЙНОЕ МЕНЮ ====================
 
+def _group_dishes_by_category(dishes):
+    """Группирует справочник блюд по категориям приёмов пищи."""
+    by_cat = {"breakfast": [], "lunch": [], "dinner": [], "snack": []}
+    for d in dishes:
+        if d.category in by_cat:
+            by_cat[d.category].append(d)
+    return by_cat
+
+
+def pick_dish_for_meal(by_cat, meal, used_today):
+    """Выбирает случайное блюдо приёма пищи, не повторяя его за день (ЛР-8, Д-4).
+
+    Если все блюда категории уже использованы в этот день — допускается
+    повтор. Раньше логика была встроена в generate_random_menu, из-за
+    чего у маршрута была цикломатическая сложность 12.
+    """
+    candidates = [d for d in by_cat[meal] if d.id not in used_today]
+    if not candidates:
+        candidates = by_cat[meal]
+    dish = random.choice(candidates)
+    used_today.add(dish.id)
+    return dish
+
+
 @app.post("/api/menu/random")
 async def generate_random_menu(req: RandomMenuRequest, db=Depends(get_db)):
     try:
         start = date_cls.fromisoformat(req.start_date)
     except Exception:
-        raise HTTPException(400, "Неверный формат даты (нужно YYYY-MM-DD)")
+        raise HTTPException(400, "Неверный формат даты (нужно YYYY-MM-DD)") from None
 
     days = req.days if 1 <= req.days <= 30 else 7
 
-    dishes = db.query(Dish).all()
-    by_cat = {"breakfast": [], "lunch": [], "dinner": [], "snack": []}
-    for d in dishes:
-        if d.category in by_cat:
-            by_cat[d.category].append(d)
-
+    by_cat = _group_dishes_by_category(db.query(Dish).all())
     for meal in ["breakfast", "lunch", "dinner", "snack"]:
         if not by_cat[meal]:
             raise HTTPException(400, f"Нет блюд для категории «{meal}». "
@@ -1861,11 +1887,7 @@ async def generate_random_menu(req: RandomMenuRequest, db=Depends(get_db)):
         current = (start + timedelta(days=i)).isoformat()
         used_today = set()
         for meal in ["breakfast", "lunch", "dinner", "snack"]:
-            candidates = [d for d in by_cat[meal] if d.id not in used_today]
-            if not candidates:
-                candidates = by_cat[meal]
-            dish = random.choice(candidates)
-            used_today.add(dish.id)
+            dish = pick_dish_for_meal(by_cat, meal, used_today)
 
             existing = db.query(Menu).filter(
                 Menu.date == current,
@@ -1951,7 +1973,7 @@ async def save_favorite(req: SaveFavoriteRequest, db=Depends(get_db)):
         start = date_cls.fromisoformat(req.from_date)
         end = date_cls.fromisoformat(req.to_date)
     except Exception:
-        raise HTTPException(400, "Неверный формат даты")
+        raise HTTPException(400, "Неверный формат даты") from None
 
     if end < start:
         raise HTTPException(400, "Дата 'по' раньше даты 'с'")
@@ -2011,7 +2033,7 @@ async def apply_favorite(req: ApplyFavoriteRequest, db=Depends(get_db)):
     try:
         start = date_cls.fromisoformat(req.to_date)
     except Exception:
-        raise HTTPException(400, "Неверный формат целевой даты")
+        raise HTTPException(400, "Неверный формат целевой даты") from None
 
     items = json.loads(fav.data or "[]")
     if not items:
@@ -2394,10 +2416,11 @@ async def export_shopping_strategy(format: str = "txt", db=Depends(get_db)):
     strategy = get_strategy(format)
     return {"data": strategy.export(data)}
 
-import uvicorn
 import logging
-import webbrowser
 import threading
+import webbrowser
+
+import uvicorn
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
