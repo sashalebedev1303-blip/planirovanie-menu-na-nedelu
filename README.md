@@ -85,7 +85,11 @@ python scripts/code_metrics.py src              # сложность, дубли
 - [Реестр технического долга (топ-5)](docs/lab8/tech-debt-registry.md) —
   погашено 4 позиции (Д-1…Д-4);
 - [Сравнение метрик «до — после»](docs/lab8/before-after.md);
-- [Что осознанно оставляем и почему](docs/lab8/accepted-debt.md).
+- [Что осознанно оставляем и почему](docs/lab8/accepted-debt.md);
+- Замеры строгого профиля ruff: [«до» — 15 замечаний](docs/lab8/ruff-strict-before.txt),
+  [«после» — 0](docs/lab8/ruff-strict-after.txt) (UTF-8);
+- [Лог воспроизведения учебного дефекта db.commit()](docs/lab8/defect-drill-dbcommit.txt)
+  — доказательство «тесты как страховка».
 
 > Для подключения SonarCloud: войти на sonarcloud.io через GitHub-аккаунт
 > владельца репозитория, импортировать репозиторий, добавить бейдж в
