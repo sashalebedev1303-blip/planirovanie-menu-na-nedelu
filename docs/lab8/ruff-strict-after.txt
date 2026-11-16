@@ -1,0 +1,6 @@
+# ruff 0.17.3, строгий профиль (ruff-strict.toml) — состояние «ПОСЛЕ» погашения долга.
+# Команда: python -m ruff check src --config ruff-strict.toml --output-format concise
+# Состояние кода: main после PR ЛР-8 (погашены Д-1…Д-4 и З-5…З-8; B008 —
+# документированное исключение в ruff-strict.toml, идиома FastAPI DI).
+# Дата замера: 15.11.2026. Кодировка: UTF-8.
+All checks passed!
