@@ -1,0 +1,83 @@
+Учебный дефект «потерян db.commit()» — воспроизведение страховки тестами (ЛР-8)
+================================================================================
+
+Описание кейса: docs/lab8/before-after.md, раздел «Кейс "тесты как страховка"».
+При первом варианте рефакторинга Д-2 из маршрутов create_dish/update_dish
+был потерян db.commit() после replace_ingredients(). В основной ветке дефект
+не попал (исправлен до коммита), поэтому по замечанию ревью ЛР-8 кейс
+воспроизведён отдельно как доказательство: 18.11.2026.
+
+Как воспроизводится (2 минуты, без изменения истории):
+
+1. В src/main.py закомментировать db.commit() в двух местах
+   (после replace_ingredients(...)) — маршруты create_dish и update_dish:
+
+       replace_ingredients(db, db_item.id, item.ingredients)
+       # db.commit()   # УЧЕБНЫЙ ДЕФЕКТ: commit потерян
+
+       db.query(Ingredient).filter(Ingredient.dish_id == dish_id).delete()
+       replace_ingredients(db, dish_id, item.ingredients)
+       # db.commit()   # УЧЕБНЫЙ ДЕФЕКТ: commit потерян
+
+2. Запустить интеграционные тесты ЛР-7:
+
+       python -m pytest tests/test_integration_api.py -v
+
+3. Зафиксировать вывод (ниже), вернуть код: git checkout -- src/main.py
+   (в воспроизведении правка вносилась и откатывалась в рабочей копии,
+   git diff после отката пуст).
+
+Результат: падают РОВНО 2 интеграционных теста — список покупок и отчёт
+перестают видеть ингредиенты блюда (записи остались в незакоммиченной
+транзакции и откатились при закрытии сессии). Модульные тесты хелпера
+проходят — они проверяют сам хелпер, а не фиксацию транзакции. Вывод:
+без страховки тестами регрессия Д-2 дошла бы до релиза незамеченной.
+
+Вывод pytest (pytest 9.2.0, Python 3.12.16, Windows/Linux):
+------------------------------------------------------------------------
+tests/test_integration_api.py::test_menu_form_validation_and_save PASSED [ 33%]
+tests/test_integration_api.py::test_menu_servings_to_shopping FAILED     [ 66%]
+tests/test_integration_api.py::test_report_counts_comma_decimal_quantities FAILED [100%]
+
+=================================== FAILURES ===================================
+________________________ test_menu_servings_to_shopping ________________________
+    def test_menu_servings_to_shopping(client):
+        """Сценарий I2: меню с порциями — расчёт — список покупок."""
+        dish = client.post("/api/dishes", json={
+            "name": "Овсянка", "category": "breakfast",
+            "ingredients": [
+                {"name": "Овсянка", "quantity": "80", "unit": "г"},
+                {"name": "Молоко", "quantity": "0,25", "unit": "л"},
+            ],
+        }).json()
+        ...
+        resp = client.post("/api/shopping/generate")
+        assert resp.status_code == 200
+        items = {i["name"]: i for i in client.get("/api/shopping").json()}
+>       assert items["Овсянка"]["quantity"] == "400"   # 80 г × 5 порций
+E       KeyError: 'Овсянка'
+
+tests/test_integration_api.py:82: KeyError
+
+_________________ test_report_counts_comma_decimal_quantities __________________
+    def test_report_counts_comma_decimal_quantities(client):
+        """Сценарий I3: полный отчёт считает количества с запятой (баг-репорт № 2)."""
+        dish = client.post("/api/dishes", json={
+            "name": "Каша", "category": "lunch",
+            "ingredients": [{"name": "Молоко", "quantity": "50,5", "unit": "мл"}],
+        }).json()
+        ...
+        report = client.get("/api/report").json()
+        summary = {s["name"]: s for s in report["summary"]}
+>       assert summary["Молоко"]["quantity"] == 101   # «50,5» × 2; раньше считалось 0
+E       KeyError: 'Молоко'
+
+tests/test_integration_api.py:99: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_integration_api.py::test_menu_servings_to_shopping - KeyErr...
+FAILED tests/test_integration_api.py::test_report_counts_comma_decimal_quantities
+=========================  2 failed, 1 passed in 1.16s  ========================
+------------------------------------------------------------------------
+
+После отката правки (git checkout -- src/main.py): 43 passed, 0 failed —
+полный набор зелёный (проверено 18.11.2026).
