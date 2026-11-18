@@ -96,7 +96,11 @@ python scripts/code_metrics.py src              # сложность, дубли
   [docs/quality/before-after.md](docs/quality/before-after.md);
 - отчёты строгого профиля ruff: [«до» — 15 замечаний](docs/quality/ruff-strict-before.txt),
   [«после» — 0](docs/quality/ruff-strict-after.txt);
-- доказательство «тесты как страховка»: [лог воспроизведения дефекта db.commit()](docs/quality/defect-drill-dbcommit.txt).
+- доказательство «тесты как страховка»: [лог воспроизведения дефекта db.commit()](docs/quality/defect-drill-dbcommit.txt);
+- сверка анализаторов и дополнительный прогон настоящего SonarQube
+  (Community Build 9.9.8 LTS в GitHub Actions):
+  [docs/quality/sonarqube-comparison.md](docs/quality/sonarqube-comparison.md),
+  метрики и замечания — [docs/quality/sonarqube/](docs/quality/sonarqube/README.md).
 
 > Для подключения SonarCloud: войти на sonarcloud.io через GitHub-аккаунт
 > владельца репозитория, импортировать репозиторий, добавить бейдж в
