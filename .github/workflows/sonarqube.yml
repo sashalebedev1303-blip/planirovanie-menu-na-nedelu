@@ -38,21 +38,26 @@ jobs:
       - name: Запуск сервера SonarQube в контейнере
         run: |
           set -e
+          IMAGE=""
           for tag in lts-community community latest; do
             echo "Пробую образ sonarqube:$tag"
             if docker pull "sonarqube:$tag"; then
-              echo "SONAR_IMAGE=sonarqube:$tag" >> "$GITHUB_ENV"
+              IMAGE="sonarqube:$tag"
               break
             fi
           done
-          test -n "${SONAR_IMAGE:-}" || { echo "::error::не удалось скачать образ SonarQube"; exit 1; }
+          if [ -z "$IMAGE" ]; then
+            echo "::error::не удалось скачать образ SonarQube"
+            exit 1
+          fi
+          echo "SONAR_IMAGE=$IMAGE" >> "$GITHUB_ENV"
           docker run -d --name sonarqube -p 9000:9000 \
             -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
             -v sonarqube_data:/opt/sonarqube/data \
             -v sonarqube_logs:/opt/sonarqube/logs \
             -v sonarqube_extensions:/opt/sonarqube/extensions \
-            "$SONAR_IMAGE"
-          echo "Запущен образ: $SONAR_IMAGE"
+            "$IMAGE"
+          echo "Запущен образ: $IMAGE"
 
       - name: Ожидание готовности сервера
         run: |
