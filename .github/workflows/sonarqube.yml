@@ -31,6 +31,8 @@ jobs:
     steps:
       - name: Клонирование репозитория
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Параметры ядра для Elasticsearch
         run: sudo sysctl -w vm.max_map_count=262144
@@ -119,6 +121,27 @@ jobs:
             -Dsonar.tests=tests \
             -Dsonar.sourceEncoding=UTF-8
 
+      - name: Ожидание обработки отчёта сервером
+        run: |
+          set -e
+          for i in $(seq 1 60); do
+            body=$(curl -s -u "admin:$SONAR_PASS" "http://localhost:9000/api/ce/component?component=tastyweek")
+            status=$(echo "$body" | jq -r '.current.status // "none"')
+            echo "[$i] Compute Engine: $status"
+            if [ "$status" = "SUCCESS" ]; then
+              echo "Отчёт обработан сервером"
+              exit 0
+            fi
+            if [ "$status" = "FAILED" ] || [ "$status" = "CANCELED" ]; then
+              echo "::error::сервер не смог обработать отчёт"
+              echo "$body" | jq .
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "::error::сервер не обработал отчёт за отведённое время"
+          exit 1
+
       - name: Выгрузка метрик через API
         run: |
           set -e
@@ -128,6 +151,16 @@ jobs:
             --data-urlencode "component=tastyweek" \
             --data-urlencode "metricKeys=$KEYS" \
             -o artifacts/measures.json
+          if [ "$(jq '.component.measures | length' artifacts/measures.json)" -eq 0 ]; then
+            echo "::error::метрики пусты — анализ не проиндексирован"
+            cat artifacts/measures.json
+            exit 1
+          fi
+          curl -sf -u "admin:$SONAR_PASS" -G "http://localhost:9000/api/measures/component_tree" \
+            --data-urlencode "component=tastyweek" \
+            --data-urlencode "metricKeys=ncloc,complexity,cognitive_complexity,code_smells,duplicated_lines_density,duplicated_blocks" \
+            --data-urlencode "ps=500" \
+            -o artifacts/measures-tree.json
           curl -sf -u "admin:$SONAR_PASS" -G "http://localhost:9000/api/issues/search" \
             --data-urlencode "componentKeys=tastyweek" \
             --data-urlencode "types=CODE_SMELL" \
