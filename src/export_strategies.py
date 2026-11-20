@@ -8,6 +8,7 @@ import csv
 import io
 from abc import ABC, abstractmethod
 
+
 class ExportStrategy(ABC):
     """Общий интерфейс всех стратегий экспорта."""
 

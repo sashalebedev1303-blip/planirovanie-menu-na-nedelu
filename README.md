@@ -67,6 +67,46 @@ python -m pytest --cov-report=term-missing -v
 
 Установка зависимостей для тестирования: `python -m pip install -r requirements-dev.txt -r src/requirements.txt`.
 
+## Метрики качества и технический долг (ЛР-8)
+
+Статический анализ: [![Ruff Linter](https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/actions/workflows/ruff.yml/badge.svg)](https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/actions/workflows/ruff.yml)
+(CI-профиль ruff, прогоны на каждом push и PR) + расширенный локальный
+профиль `ruff-strict.toml` и скрипт метрик `scripts/code_metrics.py`
+(SonarCloud подключается при доступе владельца — см. `docs/debt/accepted-debt.md`, О-5).
+
+Команды локального анализа:
+
+```
+python -m ruff check src                        # CI-профиль (зелёная сборка)
+python -m ruff check src --config ruff-strict.toml   # строгий профиль
+python scripts/code_metrics.py src              # сложность, дубли, LOC
+```
+
+Артефакты ЛР-8:
+
+- профиль качества: [docs/quality/profile.md](docs/quality/profile.md)
+  (+ замеры `metrics-before.json` / `metrics-after.json`);
+- классификация 10 замечаний по ISO/IEC 25010:
+  [docs/quality/classification.md](docs/quality/classification.md);
+- реестр технического долга топ-5 с отметками о погашении:
+  [docs/debt/registry.md](docs/debt/registry.md);
+- заметка об осознанно принятом остаточном долге:
+  [docs/debt/accepted-debt.md](docs/debt/accepted-debt.md);
+- сравнение метрик «до — после»:
+  [docs/quality/before-after.md](docs/quality/before-after.md);
+- отчёты строгого профиля ruff: [«до» — 15 замечаний](docs/quality/ruff-strict-before.txt),
+  [«после» — 0](docs/quality/ruff-strict-after.txt);
+- доказательство «тесты как страховка»: [лог воспроизведения дефекта db.commit()](docs/quality/defect-drill-dbcommit.txt);
+- сверка анализаторов и дополнительный прогон настоящего SonarQube
+  (Community Build 9.9.8 LTS в GitHub Actions):
+  [docs/quality/sonarqube-comparison.md](docs/quality/sonarqube-comparison.md),
+  метрики и замечания — [docs/quality/sonarqube/](docs/quality/sonarqube/README.md).
+
+> Для подключения SonarCloud: войти на sonarcloud.io через GitHub-аккаунт
+> владельца репозитория, импортировать репозиторий, добавить бейдж в
+> README. Для Python-проектов настройка автоматическая; при необходимости
+> сгенерировать `sonar-project.properties` (путь источников — `src`).
+
 ## Архитектура и модели 
 
 Зафиксирована архитектура решения и построены ключевые диаграммы. Исходники (`.puml`) и экспортированные изображения находятся в директориях `docs/uml/` и `docs/architecture/`.

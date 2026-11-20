@@ -1,0 +1,21 @@
+# ruff 0.17.3, строгий профиль (ruff-strict.toml) — состояние ДО погашения долга.
+# Команда: python -m ruff check src --config ruff-strict.toml --output-format concise
+# Состояние кода: main после ЛР-7 (f214085) — основание ветки feature/lab8-quality-debt.
+# Замер снят с базового коммита через git worktree. Дата замера: 18.11.2026. Кодировка: UTF-8.
+src/build_app.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+src/build_app.py:21:16: W291 [*] Trailing whitespace
+src/build_app.py:22:19: W291 [*] Trailing whitespace
+src/build_app.py:23:29: W291 [*] Trailing whitespace
+src/database.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+src/export_strategies.py:7:1: I001 [*] Import block is un-sorted or un-formatted
+src/main.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+src/main.py:4:8: F401 [*] `io` imported but unused
+src/main.py:9:22: F401 [*] `pydantic.BaseModel` imported but unused
+src/main.py:17:61: F401 [*] `schemas.DishIngredient` imported but unused
+src/main.py:1819:13: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+src/main.py:1941:13: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+src/main.py:2009:13: B904 Within an `except` clause, raise exceptions with `raise ... from err` or `raise ... from None` to distinguish them from errors in exception handling
+src/main.py:2470:1: I001 [*] Import block is un-sorted or un-formatted
+src/models.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+Found 15 errors.
+[*] 12 fixable with `--fix`.
