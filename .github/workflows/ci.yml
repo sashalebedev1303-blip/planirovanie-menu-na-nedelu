@@ -143,20 +143,30 @@ jobs:
           set -euo pipefail
           IMAGE="$(echo "${{ steps.meta.outputs.tags }}" | head -n 1)"
           echo "Проверяем образ: $IMAGE"
+          cleanup() {
+            docker logs tastyweek-smoke || true
+            docker rm -f tastyweek-smoke || true
+          }
+          trap cleanup EXIT
           docker run -d --name tastyweek-smoke -p 8000:8000 \
             -e OPEN_BROWSER=0 -e DATABASE_PATH=/tmp/dacha.db "$IMAGE"
+          READY=0
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8000/api/menu > /tmp/menu.json; then
               echo "Приложение ответило на попытке $i"
+              READY=1
               break
             fi
             sleep 2
           done
+          if [ "$READY" -ne 1 ]; then
+            echo "::error::Приложение не ответило за 60 секунд"
+            exit 1
+          fi
           curl -fsS http://127.0.0.1:8000/api/menu > /dev/null
-          curl -fsS http://127.0.0.1:8000/ | head -n 5
+          curl -fsS http://127.0.0.1:8000/ -o /tmp/index.html
+          head -n 5 /tmp/index.html
           echo "Smoke-тест пройден"
-          docker logs tastyweek-smoke | tail -n 30
-          docker rm -f tastyweek-smoke
 
       - name: Войти в GHCR
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
