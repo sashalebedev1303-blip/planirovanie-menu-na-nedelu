@@ -1,0 +1,171 @@
+name: CI
+
+# ЛР-9: единый конвейер непрерывной интеграции и доставки.
+#   pull_request -> lint + tests + build + docker (образ собирается и проходит smoke-тест)
+#   push в main  -> то же самое + публикация образа в GHCR
+#   push тега v* -> то же самое + публикация образа с версией в GHCR
+#   workflow_dispatch -> ручной прогон для демонстрации «путь изменения»
+#
+# Имена job'ов (lint, tests, build, docker) используются как обязательные
+# статус-проверки в правилах защиты ветки main — см. docs/ci.md.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.12'
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v4
+
+      - name: Установить Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Установить линтер
+        run: python -m pip install --upgrade pip && pip install -r requirements-dev.txt
+
+      - name: Проверить стиль (ruff, конфигурация ruff.toml)
+        run: python -m ruff check .
+
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v4
+
+      - name: Установить Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            src/requirements.txt
+
+      - name: Установить зависимости
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt -r src/requirements.txt
+
+      - name: Запустить автотесты с покрытием
+        run: python -m pytest -v
+
+  build:
+    name: build
+    needs: [lint, tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v4
+
+      - name: Установить Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Собрать артефакт приложения
+        run: python scripts/build_release.py
+
+      - name: Показать состав артефакта
+        run: |
+          ls -lh dist/
+          python -m zipfile -l dist/tastyweek-app.zip
+
+      - name: Выгрузить артефакт сборки
+        uses: actions/upload-artifact@v4
+        with:
+          name: tastyweek-app
+          path: dist/tastyweek-app.zip
+          retention-days: 30
+
+  docker:
+    name: docker
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v4
+
+      - name: Настроить Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Вычислить теги образа
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+      - name: Собрать образ (без публикации)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-тест образа (docker run + запрос к API)
+        run: |
+          set -euo pipefail
+          IMAGE="$(echo "${{ steps.meta.outputs.tags }}" | head -n 1)"
+          echo "Проверяем образ: $IMAGE"
+          docker run -d --name tastyweek-smoke -p 8000:8000 \
+            -e OPEN_BROWSER=0 -e DATABASE_PATH=/tmp/dacha.db "$IMAGE"
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/api/menu > /tmp/menu.json; then
+              echo "Приложение ответило на попытке $i"
+              break
+            fi
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8000/api/menu > /dev/null
+          curl -fsS http://127.0.0.1:8000/ | head -n 5
+          echo "Smoke-тест пройден"
+          docker logs tastyweek-smoke | tail -n 30
+          docker rm -f tastyweek-smoke
+
+      - name: Войти в GHCR
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Опубликовать образ в GHCR
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        run: |
+          set -euo pipefail
+          echo "${{ steps.meta.outputs.tags }}" | while read -r tag; do
+            [ -n "$tag" ] && docker push "$tag"
+          done
