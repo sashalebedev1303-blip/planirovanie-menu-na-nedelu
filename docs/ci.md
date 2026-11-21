@@ -116,7 +116,10 @@ ghcr.io/sashalebedev1303-blip/planirovanie-menu-na-nedelu:sha-<коммит>
 ```
 
 Публикация выполняется от `GITHUB_TOKEN` (права `packages: write`), отдельный
-секрет не нужен. Первый пакет создаётся приватным: чтобы `docker pull`
+секрет не нужен. Прогон на теге `v1.0.0` (21.11.2026) опубликовал теги
+`1.0.0`, `1.0`, `latest` и `sha-09ee7a8` с digest
+`sha256:bdbbd8bc3e1f5c3910f2ca441e771290c2c5ae063ecc7301fbcca97e26a91f88`.
+Первый пакет создаётся приватным: чтобы `docker pull`
 работал без авторизации, владелец может открыть
 **Profile → Packages → planirovanie-menu-na-nedelu → Package settings →
 Change visibility → Public**. Для приватного пакета нужен
