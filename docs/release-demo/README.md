@@ -32,9 +32,9 @@
 |---|---|
 | [`01-pr-checks.png`](01-pr-checks.png) | зелёные статус-проверки PR: `lint`, `tests`, `build`, `docker` |
 | [`02-ci-run.png`](02-ci-run.png) | сводка прогона CI: цепочка job'ов и общая длительность |
-| [`03-tests-log.png`](03-tests-log.png) | лог `tests`: 43 passed, покрытие 100 % |
-| [`04-artifact.png`](04-artifact.png) | артефакт `tastyweek-app` в прогоне |
-| [`05-docker-job.png`](05-docker-job.png) | smoke-тест образа: `docker run` и ответ `/api/menu` |
+| [`03-tests-job.png`](03-tests-job.png) | job `tests`: все шаги зелёные (лог — по кнопке «Sign in to view logs») |
+| [`04-artifact.png`](04-artifact.png) | артефакт `tastyweek-app` (54,5 КБ) в прогоне |
+| [`05-docker-job.png`](05-docker-job.png) | job `docker`: сборка образа и smoke-тест `docker run` + `/api/menu` |
 | [`06-release.png`](06-release.png) | страница релиза `v1.0.0` с заметками |
 | [`07-branch-protection.png`](07-branch-protection.png) | правила защиты `main` (заполняет владелец репозитория) |
 
