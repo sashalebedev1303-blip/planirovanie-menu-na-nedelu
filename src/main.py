@@ -1,5 +1,6 @@
 import csv
 import json
+import os
 import random
 from datetime import date as date_cls
 from datetime import datetime, timedelta
@@ -2424,5 +2425,10 @@ import uvicorn
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    threading.Timer(1.5, lambda: webbrowser.open('http://localhost:8000')).start()
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_config=None)
+    # ЛР-9: параметры запуска вынесены в переменные окружения — в контейнере
+    # сервер слушает 0.0.0.0, а браузер на хосте не открывается.
+    host = os.getenv("HOST", "127.0.0.1")
+    port = int(os.getenv("PORT", "8000"))
+    if os.getenv("OPEN_BROWSER", "1") != "0":
+        threading.Timer(1.5, lambda: webbrowser.open(f"http://localhost:{port}")).start()
+    uvicorn.run(app, host=host, port=port, log_config=None)
