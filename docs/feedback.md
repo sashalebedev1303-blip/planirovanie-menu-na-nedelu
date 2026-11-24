@@ -75,6 +75,8 @@
   `docs/presentation.pdf`, `docs/release-demo/README.md`, `docs/ci.md`,
   `README.md`, `docs/scrum/velocity.md`, `docs/quality/ruff-strict-after.txt`,
   `scripts/code_metrics.py`, `tests/test_integration_api.py`.
+  Повторный прогон CI на коммите `0134ce3`: `lint`, `tests`, `build`,
+  `docker` — зелёные.
 - **Готовность к защите:** технически — да, процессно — **нет**: остались
   блокеры № 1 и № 2, которые закрываются только действиями владельца
   репозитория (слияние PR, права Admin для защиты ветки).
