@@ -5,12 +5,13 @@
 на время теста SessionLocal подменяется сессией с временной БД.
 """
 
-import main
 import pytest
-from database import Base
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+import main
+from database import Base
 
 
 @pytest.fixture()

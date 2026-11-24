@@ -124,7 +124,7 @@ def slide_problem(prs):
         "Ингредиенты забываются, продукты покупаются дважды или остаются лишними.",
         "Нет единого места, где меню, рецепты и список покупок связаны между собой.",
         "Пользователи: студенты, сотрудники и все, кто ведёт домашнее хозяйство.",
-        "Цель MVP: сократить планирование до нескольких минут и получить точный список покупок.",
+        "Цель MVP (v0.1) → релиз v1.0.0: сократить планирование до нескольких минут и получить точный список покупок.",
     ], size=17)
 
     cards = [
@@ -161,7 +161,7 @@ def slide_requirements(prs):
                 "Проверяемость требований", size=18, color=NAVY, bold=True)
     add_bullets(slide, Inches(7.4), Inches(2.45), Inches(4.85), Inches(3.5), [
         "User stories и SRS — docs/requirements/.",
-        "Матрица прослеживаемости: требование → тест → код.",
+        "Матрица прослеживаемости: история → требование → задача → ветка.",
         "43 автотеста, включая интеграционные сценарии API.",
         "Definition of Done: ревью, зелёный CI, тесты, документация.",
     ], size=14, color=GRAY, spacing=Pt(6))
@@ -175,7 +175,7 @@ def slide_architecture(prs):
     boxes = [
         ("Веб-интерфейс", "HTML + CSS + JS\nChoices.js, адаптивная вёрстка", BLUE, 0.8),
         ("API-сервер", "FastAPI · 30 маршрутов\nSQLAlchemy ORM", GREEN, 4.85),
-        ("База данных", "SQLite · dacha.db\n5 сущностей", TEAL, 8.9),
+        ("База данных", "SQLite · dacha.db\n6 сущностей", TEAL, 8.9),
     ]
     for title, subtitle, color, left in boxes:
         add_rect(slide, Inches(left), Inches(1.9), Inches(3.4), Inches(1.55), color, radius=True)
@@ -215,9 +215,9 @@ def slide_process(prs):
                     subtitle, size=12, color=WHITE, align=PP_ALIGN.CENTER)
 
     add_bullets(slide, Inches(0.8), Inches(3.65), Inches(11.8), Inches(2.8), [
-        "Прямые коммиты в main запрещены: любое изменение — через pull request и ревью второго участника.",
+        "Прямые коммиты в main запрещены правилами команды: изменение — через pull request и ревью второго участника.",
         "Конвейер — это код: workflow лежит в репозитории и ревьюится как любой другой артефакт.",
-        "Красный статус блокирует слияние: lint и tests обязательны для main.",
+        "После включения защиты ветки красный статус блокирует слияние: обязательны lint, tests, build, docker.",
         "Документация живёт рядом с кодом: ADR, протоколы встреч, реестр долга, заметки релиза.",
         "Вклад участников фиксируется историей коммитов, PR и протоколами (docs/team-contributions.md).",
     ], size=15, color=NAVY)
@@ -251,7 +251,9 @@ def slide_metrics(prs):
                 "Замеры и обоснования: docs/quality/ · реестр долга: docs/debt/",
                 size=12, color=GRAY)
     add_notes(slide, "Метрики сравниваются «до/после» внутри команды; покрытие честно "
-                     "ограничено ключевыми вычислительными модулями.")
+                     "ограничено ключевыми вычислительными модулями. Если спросят про "
+                     "ограничения — назвать SQLite и одного пользователя, HTML-шаблон "
+                     "в main.py и остаточный долг (docs/debt/accepted-debt.md).")
     return slide
 
 
@@ -290,11 +292,13 @@ def slide_demo(prs):
     add_textbox(slide, Inches(7.1), Inches(3.65), Inches(5.2), Inches(0.4),
                 "Запуск релиза", size=17, color=WHITE, bold=True)
     add_textbox(slide, Inches(7.1), Inches(4.15), Inches(5.2), Inches(1.7),
-                "docker pull ghcr.io/sashalebedev1303-blip/\n"
-                "planirovanie-menu-na-nedelu:1.0.0\n\n"
+                "docker pull ghcr.io/sashalebedev1303-blip/\\\n"
+                "  planirovanie-menu-na-nedelu:1.0.0\n\n"
                 "docker run -p 8000:8000 \\\n"
-                "  -v tastyweek-data:/app/data <образ>",
-                size=11, color=RGBColor(0xC9, 0xD6, 0xEA), font="Consolas")
+                "  -v tastyweek-data:/app/data \\\n"
+                "  ghcr.io/sashalebedev1303-blip/\\\n"
+                "  planirovanie-menu-na-nedelu:1.0.0",
+                size=10, color=RGBColor(0xC9, 0xD6, 0xEA), font="Consolas")
     add_notes(slide, "Кульминация: живой прогон PR → CI → артефакт → образ → релиз. "
                      "Показать страницу релиза и скачать артефакт.")
     return slide
