@@ -31,13 +31,35 @@
 
 Инструкция по запуску каркаса прототипа (ЛР-5):
 
-1. Перейдите в раздел **Releases** на странице репозитория.
+1. Откройте релиз **v1.0** в разделе **Releases** (Windows-сборка прототипа).
 2. Скачайте архив **`TastyWeek_v1.0.zip`** и распакуйте его в любую удобную папку.
 3. Откройте распакованную папку проекта.
 4. Перейдите по пути: `dist` → `TastyWeek` → `TastyWeek.exe`.
 5. Запустите файл `TastyWeek.exe`.
 
 > ⚠️ **Примечание:** При первом запуске Windows SmartScreen может выдать предупреждение (файл без цифровой подписи). Нажмите **«Подробнее»** → **«Выполнить в любом случае»**.
+
+### Запуск в контейнере (ЛР-9)
+
+Приложение упаковано в Docker-образ (`Dockerfile` в корне репозитория).
+Сборка и запуск из исходников:
+
+```
+docker build -t tastyweek:v1.0.0 .
+docker run --rm -p 8000:8000 -v tastyweek-data:/app/data tastyweek:v1.0.0
+```
+
+Приложение откроется на <http://localhost:8000>; база хранится в томе
+`tastyweek-data`. Готовый образ публикуется в GHCR при слиянии в `main`
+и при push тега:
+
+```
+docker pull ghcr.io/sashalebedev1303-blip/planirovanie-menu-na-nedelu:1.0.0
+```
+
+Параметры запуска задаются переменными окружения: `HOST` (по умолчанию
+`127.0.0.1`), `PORT` (`8000`), `OPEN_BROWSER` (`1` — открыть браузер,
+`0` — не открывать), `DATABASE_PATH` (путь к файлу SQLite).
 
 ## Как запустить тесты (ЛР-7)
 
@@ -107,6 +129,39 @@ python scripts/code_metrics.py src              # сложность, дубли
 > README. Для Python-проектов настройка автоматическая; при необходимости
 > сгенерировать `sonar-project.properties` (путь источников — `src`).
 
+## Конвейер CI/CD и релиз (ЛР-9)
+
+[![CI](https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/actions/workflows/ci.yml/badge.svg)](https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/actions/workflows/ci.yml)
+
+Единый конвейер — `.github/workflows/ci.yml`:
+
+- на каждый PR в `main`: `lint` (ruff) → `tests` (pytest, 43 теста) →
+  `build` (артефакт `tastyweek-app.zip`) → `docker` (сборка образа,
+  `docker run` и smoke-тест `/api/menu`);
+- на push в `main` и на тег `v*`: то же + публикация образа в GHCR;
+- красный статус блокирует слияние после настройки защиты ветки.
+
+Артефакты ЛР-9:
+
+- инструкция по конвейеру и защите ветки: [docs/ci.md](docs/ci.md);
+- заметки релиза v1.0.0: [docs/release-notes/v1.0.0.md](docs/release-notes/v1.0.0.md);
+- демонстрация «путь изменения»: [docs/release-demo/README.md](docs/release-demo/README.md);
+- презентация защиты: [docs/presentation.pptx](docs/presentation.pptx)
+  ([PDF-версия](docs/presentation.pdf));
+- обратная связь репетиции: [docs/feedback.md](docs/feedback.md).
+
+Релиз: [v1.0.0](https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/releases/tag/v1.0.0).
+Образ: `ghcr.io/sashalebedev1303-blip/planirovanie-menu-na-nedelu:1.0.0`.
+
+Локальные команды конвейера:
+
+```
+python -m ruff check .                 # lint
+python -m pytest -v                    # tests
+python scripts/build_release.py        # build (dist/tastyweek-app.zip)
+docker build -t tastyweek:v1.0.0 .     # docker
+```
+
 ## Архитектура и модели 
 
 Зафиксирована архитектура решения и построены ключевые диаграммы. Исходники (`.puml`) и экспортированные изображения находятся в директориях `docs/uml/` и `docs/architecture/`.
@@ -141,7 +196,7 @@ python scripts/code_metrics.py src              # сложность, дубли
 - [Реестр рисков](docs/plan/risk.md)
 - [Каталог требований](docs/plan/requirements.md)
 
-**Текущая веха:** Демонстрация прототипа — 23.10.2026; сданы ЛР-5 и ЛР-6 — 30.10.2026; обновление плана после ЛР-6 — 02.11.2026.
+**Текущая веха:** релиз **v1.0.0** — 21.11.2026; защита сквозного проекта — зачётная неделя. Ранее: демонстрация прототипа — 23.10.2026; сданы ЛР-5 и ЛР-6 — 30.10.2026; обновление плана после ЛР-6 — 02.11.2026.
 
 Все задачи плана ведутся в [GitHub Issues](https://github.com/sashalebedev1303-blip/planirovanie-menu-na-nedelu/issues?q=label%3AWBS) и на [доске проекта](https://github.com/users/sashalebedev1303-blip/projects/1).
 

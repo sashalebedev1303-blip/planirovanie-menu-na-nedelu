@@ -1,6 +1,7 @@
 # ruff 0.17.3, строгий профиль (ruff-strict.toml) — состояние ПОСЛЕ погашения долга.
-# Команда: python -m ruff check src --config ruff-strict.toml --output-format concise
-# Состояние кода: ветка feature/lab8-quality-debt после рефакторингов Д-1…Д-4
-# и исправления замечаний строгого профиля. B008 — документированное исключение
-# в ruff-strict.toml (идиома FastAPI DI). Дата замера: 18.11.2026. Кодировка: UTF-8.
+# Команда: python -m ruff check . --config ruff-strict.toml --output-format concise
+# Состояние кода: ветка feature/lab9-cicd-release; проверка расширена с src на весь
+# репозиторий (src, scripts, tests) и замечания F401/I001 устранены.
+# B008 — документированное исключение в ruff-strict.toml (идиома FastAPI DI).
+# Дата замера: 24.11.2026. Кодировка: UTF-8.
 All checks passed!

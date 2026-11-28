@@ -21,7 +21,6 @@ import ast
 import hashlib
 import json
 import sys
-from collections import Counter
 from pathlib import Path
 
 # --- цикломатическая сложность -------------------------------------------
